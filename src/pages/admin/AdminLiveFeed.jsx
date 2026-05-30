@@ -1,163 +1,370 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { entities } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
-import GlassCard from '@/components/ui/GlassCard';
-import { Activity, Dumbbell, Utensils, Droplets, Footprints, Moon, Star, AlertTriangle, Flame, Trophy, Target } from 'lucide-react';
+import {
+    Activity, Dumbbell, Utensils, Droplets, Footprints, Moon,
+    Flame, Trophy, MessageSquare, Scale, Pill, Camera,
+    RefreshCw, Pause, Play, Wifi, WifiOff, ChevronDown
+} from 'lucide-react';
 
-const EVENT_TYPES = [
-    { type: 'workout', icon: Dumbbell, color: 'text-purple-400', bg: 'bg-purple-500/10', templates: ['completed a {dur}-minute {wtype} workout', 'logged {wtype} session — {cal} calories burned', 'finished morning {wtype} session 💪'] },
-    { type: 'meal', icon: Utensils, color: 'text-emerald-400', bg: 'bg-emerald-500/10', templates: ['logged {meal} ({cal} kcal)', 'hit daily protein goal 🎯', 'logged breakfast — on track for today'] },
-    { type: 'water', icon: Droplets, color: 'text-blue-400', bg: 'bg-blue-500/10', templates: ['reached daily water goal 💧', 'logged {ml}ml water intake', 'hit 2L hydration target!'] },
-    { type: 'steps', icon: Footprints, color: 'text-orange-400', bg: 'bg-orange-500/10', templates: ['reached {steps} steps today! 🏃', 'hit the 10K steps milestone!', 'logged {steps} steps — great pace'] },
-    { type: 'streak', icon: Flame, color: 'text-red-400', bg: 'bg-red-500/10', templates: ['hit a {n}-day login streak! 🔥', 'extended streak to {n} days', 'just unlocked Streak Warrior badge 🏅'] },
-    { type: 'milestone', icon: Trophy, color: 'text-yellow-400', bg: 'bg-yellow-500/10', templates: ['reached {xp} total XP!', 'unlocked new achievement badge', 'leveled up — new rank unlocked! 🎉'] },
-    { type: 'alert', icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10', templates: ['missed meal logging today', 'hasn\'t logged in for {n} days', 'below daily step target'] },
-];
+// ─── Event type config ────────────────────────────────────────────────────────
+const TYPE_META = {
+    workout: { label: 'Workout', icon: Dumbbell, color: 'text-violet-400', bg: 'bg-violet-500/10', border: 'border-violet-500/20' },
+    meal: { label: 'Meal', icon: Utensils, color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+    water: { label: 'Water', icon: Droplets, color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
+    steps: { label: 'Steps', icon: Footprints, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+    sleep: { label: 'Sleep', icon: Moon, color: 'text-indigo-400', bg: 'bg-indigo-500/10', border: 'border-indigo-500/20' },
+    weight: { label: 'Weight', icon: Scale, color: 'text-pink-400', bg: 'bg-pink-500/10', border: 'border-pink-500/20' },
+    supplement: { label: 'Supplement', icon: Pill, color: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/20' },
+    progress: { label: 'Progress', icon: Camera, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+    message: { label: 'Message', icon: MessageSquare, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+    streak: { label: 'Streak', icon: Flame, color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+    achievement: { label: 'Achievement', icon: Trophy, color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
+};
 
-const FALLBACK_NAMES = ['Sarah K.', 'Mike R.', 'Priya S.', 'James T.', 'Ana L.', 'John D.', 'Tom W.', 'Lisa M.'];
+const FILTERS = ['all', ...Object.keys(TYPE_META)];
 
-function generateEvent(names) {
-    const eType = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
-    const tmpl = eType.templates[Math.floor(Math.random() * eType.templates.length)];
-    const NAMES = names.length > 0 ? names : FALLBACK_NAMES;
-    const name = NAMES[Math.floor(Math.random() * NAMES.length)];
-    const text = tmpl
-        .replace('{dur}', [20, 30, 45, 60][Math.floor(Math.random() * 4)])
-        .replace('{wtype}', ['strength', 'cardio', 'HIIT', 'yoga'][Math.floor(Math.random() * 4)])
-        .replace('{cal}', Math.floor(Math.random() * 300 + 150))
-        .replace('{meal}', ['breakfast', 'lunch', 'dinner', 'snack'][Math.floor(Math.random() * 4)])
-        .replace('{ml}', [250, 500, 750][Math.floor(Math.random() * 3)])
-        .replace('{steps}', (Math.floor(Math.random() * 8000 + 3000)).toLocaleString())
-        .replace('{n}', Math.floor(Math.random() * 25 + 5))
-        .replace('{xp}', (Math.floor(Math.random() * 5000 + 500)).toLocaleString());
-    return { id: Date.now() + Math.random(), name, text, type: eType.type, icon: eType.icon, color: eType.color, bg: eType.bg, timeMs: Date.now() };
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function shortEmail(email = '') {
+    const [local] = email.split('@');
+    return local.length > 14 ? local.slice(0, 13) + '…' : local;
 }
 
+function timeSince(isoStr, now) {
+    const diff = Math.floor((now - new Date(isoStr).getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+}
+
+// Build unified event objects from each raw row
+function fromWorkout(r) {
+    return {
+        id: `workout-${r.id}`,
+        type: 'workout',
+        user: r.user_email,
+        text: `logged a ${r.duration_min ? r.duration_min + '-min ' : ''}${r.workout_type} workout${r.calories_burned ? ` — ${r.calories_burned} kcal burned` : ''}`,
+        meta: r.intensity ? `Intensity: ${r.intensity}` : null,
+        ts: r.created_at,
+    };
+}
+function fromMeal(r) {
+    return {
+        id: `meal-${r.id}`,
+        type: 'meal',
+        user: r.user_email,
+        text: `logged ${r.meal_type}: ${r.food_name}${r.calories ? ` (${r.calories} kcal)` : ''}`,
+        meta: r.protein ? `${r.protein}g protein` : null,
+        ts: r.created_at,
+    };
+}
+function fromWater(r) {
+    return {
+        id: `water-${r.id}`,
+        type: 'water',
+        user: r.user_email,
+        text: `logged ${r.amount_ml}ml water${r.time ? ` at ${r.time}` : ''}`,
+        meta: null,
+        ts: r.created_at,
+    };
+}
+function fromSteps(r) {
+    return {
+        id: `steps-${r.id}`,
+        type: 'steps',
+        user: r.user_email,
+        text: `logged ${Number(r.steps).toLocaleString()} steps${r.calories_burned ? ` — ${r.calories_burned} kcal` : ''}`,
+        meta: null,
+        ts: r.created_at,
+    };
+}
+function fromSleep(r) {
+    return {
+        id: `sleep-${r.id}`,
+        type: 'sleep',
+        user: r.user_email,
+        text: `logged ${r.hours}h sleep${r.quality ? ` — ${r.quality} quality` : ''}`,
+        meta: r.bed_time && r.wake_time ? `${r.bed_time} → ${r.wake_time}` : null,
+        ts: r.created_at,
+    };
+}
+function fromWeight(r) {
+    return {
+        id: `weight-${r.id}`,
+        type: 'weight',
+        user: r.user_email,
+        text: `logged weight: ${r.weight_kg} kg`,
+        meta: r.notes || null,
+        ts: r.created_at,
+    };
+}
+function fromSupplement(r) {
+    return {
+        id: `supplement-${r.id}`,
+        type: 'supplement',
+        user: r.user_email,
+        text: `logged ${r.supplement_name}${r.dose ? ` — ${r.dose}` : ''}${r.timing ? ` (${r.timing.replace(/_/g, ' ')})` : ''}`,
+        meta: r.brand || null,
+        ts: r.created_at,
+    };
+}
+function fromProgress(r) {
+    return {
+        id: `progress-${r.id}`,
+        type: 'progress',
+        user: r.user_email,
+        text: `submitted ${r.period} body progress check-in${r.weight_kg ? ` — ${r.weight_kg} kg` : ''}`,
+        meta: r.mood ? `Mood: ${r.mood}` : null,
+        ts: r.created_at,
+    };
+}
+function fromMessage(r) {
+    return {
+        id: `message-${r.id}`,
+        type: 'message',
+        user: r.user_email,
+        text: `sent a message${r.text ? `: "${r.text.slice(0, 60)}${r.text.length > 60 ? '…' : ''}"` : ''}`,
+        meta: r.read ? null : '● Unread',
+        urgent: !r.read,
+        ts: r.created_at,
+    };
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function AdminLiveFeed() {
-    const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => entities.User.list() });
-    const { data: allProfiles = [] } = useQuery({ queryKey: ['admin-profiles'], queryFn: () => entities.UserProfile.list() });
-
-    const names = useMemo(() => allUsers.map(u => u.full_name?.split(' ')[0] || u.email?.split('@')[0] || 'User').filter(Boolean), [allUsers]);
-    const activeStreaks = allProfiles.filter(p => (p.login_streak || 0) > 0).length;
-
     const [now, setNow] = useState(Date.now());
-    useEffect(() => {
-        const tick = setInterval(() => setNow(Date.now()), 10000);
-        return () => clearInterval(tick);
-    }, []);
-
-    const [events, setEvents] = useState(() => Array.from({ length: 10 }, () => generateEvent([])));
     const [filter, setFilter] = useState('all');
     const [paused, setPaused] = useState(false);
-    const [stats, setStats] = useState({ workouts: 0, meals: 0, steps: 0, streaks: 0 });
+    const [showCount, setShowCount] = useState(50);
 
+    // Tick clock every 15s
     useEffect(() => {
-        if (activeStreaks > 0) setStats(s => ({ ...s, streaks: activeStreaks }));
-    }, [activeStreaks]);
+        const t = setInterval(() => setNow(Date.now()), 15000);
+        return () => clearInterval(t);
+    }, []);
 
-    useEffect(() => {
-        if (paused) return;
-        const interval = setInterval(() => {
-            const evt = generateEvent(names);
-            setEvents(prev => [evt, ...prev].slice(0, 50));
-            setStats(s => ({
-                ...s,
-                workouts: evt.type === 'workout' ? s.workouts + 1 : s.workouts,
-                meals: evt.type === 'meal' ? s.meals + 1 : s.meals,
-            }));
-        }, 3500);
-        return () => clearInterval(interval);
-    }, [paused]);
-
-    const filtered = filter === 'all' ? events : events.filter(e => e.type === filter);
-    const timeSince = (timeMs) => {
-        const s = Math.floor((now - timeMs) / 1000);
-        if (s < 60) return `${s}s ago`;
-        if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-        return `${Math.floor(s / 3600)}h ago`;
+    const queryOpts = {
+        refetchInterval: paused ? false : 30000,
+        staleTime: 20000,
     };
 
+    const { data: workouts = [], isFetching: wf } = useQuery({ queryKey: ['feed-workouts'], queryFn: () => entities.WorkoutLog.list(), ...queryOpts });
+    const { data: meals = [], isFetching: mf } = useQuery({ queryKey: ['feed-meals'], queryFn: () => entities.MealLog.list(), ...queryOpts });
+    const { data: waters = [], isFetching: waf } = useQuery({ queryKey: ['feed-waters'], queryFn: () => entities.WaterLog.list(), ...queryOpts });
+    const { data: steps = [], isFetching: sf } = useQuery({ queryKey: ['feed-steps'], queryFn: () => entities.StepLog.list(), ...queryOpts });
+    const { data: sleeps = [], isFetching: slf } = useQuery({ queryKey: ['feed-sleeps'], queryFn: () => entities.SleepLog.list(), ...queryOpts });
+    const { data: weights = [], isFetching: wlf } = useQuery({ queryKey: ['feed-weights'], queryFn: () => entities.WeightLog.list(), ...queryOpts });
+    const { data: supplements = [], isFetching: spf } = useQuery({ queryKey: ['feed-supps'], queryFn: () => entities.SupplementLog.list(), ...queryOpts });
+    const { data: progresses = [], isFetching: pf } = useQuery({ queryKey: ['feed-progress'], queryFn: () => entities.BodyProgress.list(), ...queryOpts });
+    const { data: messages = [], isFetching: msf } = useQuery({ queryKey: ['feed-messages'], queryFn: () => entities.ChatMessage.list(), ...queryOpts });
+    const { data: profiles = [] } = useQuery({ queryKey: ['feed-profiles'], queryFn: () => entities.UserProfile.list(), staleTime: 60000 });
+
+    const isFetching = wf || mf || waf || sf || slf || wlf || spf || pf || msf;
+
+    // Merge & sort all events
+    const allEvents = useMemo(() => {
+        const raw = [
+            ...workouts.map(fromWorkout),
+            ...meals.map(fromMeal),
+            ...waters.map(fromWater),
+            ...steps.map(fromSteps),
+            ...sleeps.map(fromSleep),
+            ...weights.map(fromWeight),
+            ...supplements.map(fromSupplement),
+            ...progresses.map(fromProgress),
+            ...messages.filter(m => m.sender === 'user').map(fromMessage),
+        ];
+        raw.sort((a, b) => new Date(b.ts) - new Date(a.ts));
+        return raw;
+    }, [workouts, meals, waters, steps, sleeps, weights, supplements, progresses, messages]);
+
+    // Stats from real data
+    const stats = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        return {
+            workouts: workouts.filter(r => r.date === today).length,
+            meals: meals.filter(r => r.date === today).length,
+            steps: steps.filter(r => r.date === today && r.steps >= 10000).length,
+            streaks: profiles.filter(p => (p.login_streak || 0) >= 3).length,
+            unread: messages.filter(m => m.sender === 'user' && !m.read).length,
+            activeUsers: new Set(allEvents.filter(e => {
+                const diff = (Date.now() - new Date(e.ts)) / 3600000;
+                return diff <= 24;
+            }).map(e => e.user)).size,
+        };
+    }, [workouts, meals, steps, profiles, messages, allEvents]);
+
+    const filtered = useMemo(() =>
+        (filter === 'all' ? allEvents : allEvents.filter(e => e.type === filter)).slice(0, showCount),
+        [allEvents, filter, showCount]
+    );
+
+    const totalFiltered = filter === 'all' ? allEvents.length : allEvents.filter(e => e.type === filter).length;
+
     return (
-        <div className="space-y-6">
+        <div className="space-y-5 font-sans">
+
+            {/* ── Header ── */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 className="text-2xl font-space font-bold flex items-center gap-2">
-                        <Activity className="w-7 h-7 text-emerald-400" /> Live Activity Feed
+                    <h1 className="text-2xl font-bold flex items-center gap-2 tracking-tight">
+                        <Activity className="w-6 h-6 text-emerald-400" />
+                        Live Activity Feed
                     </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Real-time platform event stream</p>
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                        {allEvents.length.toLocaleString()} total events · {stats.activeUsers} users active in last 24h
+                    </p>
                 </div>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 glass px-3 py-2 rounded-xl border border-emerald-500/20">
-                        <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-                        <span className="text-xs text-emerald-400 font-medium">Live</span>
+                <div className="flex items-center gap-2">
+                    {/* Live indicator */}
+                    <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-all ${isFetching
+                        ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10'
+                        : paused
+                            ? 'border-white/10 text-muted-foreground'
+                            : 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                        }`}>
+                        {isFetching
+                            ? <RefreshCw className="w-3 h-3 animate-spin" />
+                            : paused
+                                ? <WifiOff className="w-3 h-3" />
+                                : <Wifi className="w-3 h-3" />
+                        }
+                        {isFetching ? 'Syncing…' : paused ? 'Paused' : 'Live · 30s'}
                     </div>
-                    <button onClick={() => setPaused(p => !p)}
-                        className={`text-xs px-3 py-2 rounded-xl border transition-all ${paused ? 'border-yellow-500/30 text-yellow-400 bg-yellow-500/10' : 'border-white/10 text-muted-foreground hover:border-white/20'}`}>
-                        {paused ? '▶ Resume' : '⏸ Pause'}
+                    <button
+                        onClick={() => setPaused(p => !p)}
+                        className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-white/10 text-muted-foreground hover:border-white/20 hover:text-white transition-all"
+                    >
+                        {paused ? <><Play className="w-3 h-3" /> Resume</> : <><Pause className="w-3 h-3" /> Pause</>}
                     </button>
                 </div>
             </div>
 
-            {/* Live Stats */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* ── Stats row ── */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 {[
-                    { label: 'Workouts Today', value: stats.workouts, icon: Dumbbell, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-                    { label: 'Meals Logged', value: stats.meals, icon: Utensils, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-                    { label: 'Step Goals Hit', value: stats.steps, icon: Footprints, color: 'text-orange-400', bg: 'bg-orange-500/10' },
-                    { label: 'Active Streaks', value: stats.streaks, icon: Flame, color: 'text-red-400', bg: 'bg-red-500/10' },
+                    { label: "Today's Workouts", value: stats.workouts, icon: Dumbbell, color: 'text-violet-400', bg: 'bg-violet-500/10' },
+                    { label: "Meals Logged", value: stats.meals, icon: Utensils, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+                    { label: "10K Step Goals", value: stats.steps, icon: Footprints, color: 'text-orange-400', bg: 'bg-orange-500/10' },
+                    { label: "Active Streaks 3+", value: stats.streaks, icon: Flame, color: 'text-red-400', bg: 'bg-red-500/10' },
+                    { label: "Unread Messages", value: stats.unread, icon: MessageSquare, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+                    { label: "Active (24h)", value: stats.activeUsers, icon: Activity, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
                 ].map(s => (
                     <div key={s.label} className="glass rounded-xl p-3 border border-white/5 flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center`}>
+                        <div className={`w-9 h-9 rounded-lg ${s.bg} flex items-center justify-center flex-shrink-0`}>
                             <s.icon className={`w-4 h-4 ${s.color}`} />
                         </div>
-                        <div>
-                            <div className={`text-xl font-bold font-space ${s.color}`}>{s.value}</div>
-                            <div className="text-[10px] text-muted-foreground">{s.label}</div>
+                        <div className="min-w-0">
+                            <div className={`text-xl font-bold ${s.color} leading-none`}>{s.value}</div>
+                            <div className="text-[10px] text-muted-foreground mt-0.5 leading-tight">{s.label}</div>
                         </div>
                     </div>
                 ))}
             </div>
 
-            {/* Filter Pills */}
+            {/* ── Filter pills ── */}
             <div className="flex gap-2 flex-wrap">
-                {['all', 'workout', 'meal', 'water', 'steps', 'streak', 'milestone', 'alert'].map(f => (
-                    <button key={f} onClick={() => setFilter(f)}
-                        className={`text-xs px-3 py-1.5 rounded-full border capitalize transition-all ${filter === f ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'border-white/10 text-muted-foreground hover:border-white/20'}`}>
-                        {f}
-                    </button>
-                ))}
+                {FILTERS.map(f => {
+                    const meta = TYPE_META[f];
+                    const count = f === 'all' ? allEvents.length : allEvents.filter(e => e.type === f).length;
+                    return (
+                        <button
+                            key={f}
+                            onClick={() => { setFilter(f); setShowCount(50); }}
+                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border capitalize transition-all ${filter === f
+                                ? `${meta?.bg || 'bg-white/10'} ${meta?.border || 'border-white/20'} ${meta?.color || 'text-white'}`
+                                : 'border-white/10 text-muted-foreground hover:border-white/20 hover:text-white'
+                                }`}
+                        >
+                            {meta && <meta.icon className="w-3 h-3" />}
+                            {f === 'all' ? 'All' : meta?.label}
+                            <span className="opacity-60 text-[10px]">{count}</span>
+                        </button>
+                    );
+                })}
             </div>
 
-            {/* Feed */}
+            {/* ── Feed ── */}
             <div className="glass rounded-2xl border border-white/5 overflow-hidden">
-                <div className="max-h-[600px] overflow-y-auto">
-                    <AnimatePresence initial={false}>
-                        {filtered.map((evt, i) => {
-                            const Icon = evt.icon;
-                            return (
-                                <motion.div key={evt.id}
-                                    initial={{ opacity: 0, y: -20, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                                    animate={{ opacity: 1, y: 0, backgroundColor: 'rgba(255,255,255,0)' }}
-                                    transition={{ duration: 0.4 }}
-                                    className="flex items-center gap-4 px-5 py-3.5 border-b border-white/3 hover:bg-white/3 transition-all">
-                                    <div className={`w-8 h-8 rounded-lg ${evt.bg} flex items-center justify-center flex-shrink-0`}>
-                                        <Icon className={`w-4 h-4 ${evt.color}`} />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2 flex-wrap">
-                                            <span className="font-medium text-sm">{evt.name}</span>
-                                            <span className="text-sm text-muted-foreground">{evt.text}</span>
+                {filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+                        <Activity className="w-8 h-8 opacity-30" />
+                        <p className="text-sm">No events yet</p>
+                    </div>
+                ) : (
+                    <div className="max-h-[640px] overflow-y-auto divide-y divide-white/[0.03]">
+                        <AnimatePresence initial={false}>
+                            {filtered.map((evt) => {
+                                const meta = TYPE_META[evt.type] || TYPE_META.workout;
+                                const Icon = meta.icon;
+                                return (
+                                    <motion.div
+                                        key={evt.id}
+                                        initial={{ opacity: 0, y: -12, backgroundColor: 'rgba(255,255,255,0.04)' }}
+                                        animate={{ opacity: 1, y: 0, backgroundColor: 'rgba(255,255,255,0)' }}
+                                        transition={{ duration: 0.35, ease: 'easeOut' }}
+                                        className="flex items-start gap-3 px-4 py-3 hover:bg-white/[0.02] transition-colors group"
+                                    >
+                                        {/* Icon */}
+                                        <div className={`w-8 h-8 rounded-lg ${meta.bg} flex items-center justify-center flex-shrink-0 mt-0.5 border ${meta.border}`}>
+                                            <Icon className={`w-3.5 h-3.5 ${meta.color}`} />
                                         </div>
-                                    </div>
-                                    <div className="text-xs text-muted-foreground flex-shrink-0">{timeSince(evt.timeMs)}</div>
-                                    {evt.type === 'alert' && <div className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0 animate-pulse" />}
-                                </motion.div>
-                            );
-                        })}
-                    </AnimatePresence>
-                </div>
+
+                                        {/* Content */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-baseline gap-1.5 flex-wrap">
+                                                <span className="font-semibold text-sm text-white/90 font-mono">
+                                                    {shortEmail(evt.user)}
+                                                </span>
+                                                <span className="text-sm text-muted-foreground leading-snug">
+                                                    {evt.text}
+                                                </span>
+                                            </div>
+                                            {evt.meta && (
+                                                <div className={`text-[11px] mt-0.5 ${evt.urgent ? 'text-blue-400 font-medium' : 'text-muted-foreground/70'}`}>
+                                                    {evt.meta}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Time + type badge */}
+                                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                            <span className="text-[11px] text-muted-foreground/60">
+                                                {timeSince(evt.ts, now)}
+                                            </span>
+                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${meta.bg} ${meta.color} border ${meta.border} opacity-0 group-hover:opacity-100 transition-opacity capitalize`}>
+                                                {meta.label}
+                                            </span>
+                                        </div>
+
+                                        {/* Unread dot for messages */}
+                                        {evt.urgent && (
+                                            <div className="w-1.5 h-1.5 bg-blue-400 rounded-full flex-shrink-0 mt-2 animate-pulse" />
+                                        )}
+                                    </motion.div>
+                                );
+                            })}
+                        </AnimatePresence>
+                    </div>
+                )}
+
+                {/* Load more */}
+                {totalFiltered > showCount && (
+                    <button
+                        onClick={() => setShowCount(n => n + 50)}
+                        className="w-full flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground hover:text-white hover:bg-white/3 border-t border-white/5 transition-all"
+                    >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                        Load more ({totalFiltered - showCount} remaining)
+                    </button>
+                )}
             </div>
+
+            <p className="text-[11px] text-muted-foreground/50 text-center">
+                Showing {filtered.length} of {totalFiltered} events · Auto-refreshes every 30s
+            </p>
         </div>
     );
 }
