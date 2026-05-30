@@ -9,7 +9,7 @@ import ProgressRing from '@/components/ui/ProgressRing';
 import AnimatedCounter from '@/components/ui/AnimatedCounter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Footprints, Plus, Flame } from 'lucide-react';
+import { Footprints, Plus, Flame, Trash2 } from 'lucide-react';
 
 export default function StepTracker() {
     const { user } = useAuth();
@@ -25,6 +25,11 @@ export default function StepTracker() {
     const addSteps = useMutation({
         mutationFn: (steps) => entities.StepLog.create({ user_email: user.email, date: todayStr, steps, calories_burned: Math.round(steps * 0.04) }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['steps'] }); setStepInput(''); },
+    });
+
+    const deleteLog = useMutation({
+        mutationFn: (id) => entities.StepLog.delete(id),
+        onSuccess: () => qc.invalidateQueries({ queryKey: ['steps'] }),
     });
 
     const totalSteps = useMemo(() => logs.reduce((s, l) => s + (l.steps || 0), 0), [logs]);
@@ -99,7 +104,13 @@ export default function StepTracker() {
                                         <Footprints className="w-4 h-4 text-orange-400" />
                                         <span className="font-medium text-sm">{log.steps?.toLocaleString()} steps</span>
                                     </div>
-                                    <span className="text-xs text-muted-foreground">{log.calories_burned} cal</span>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-xs text-muted-foreground">{log.calories_burned} cal</span>
+                                        <button onClick={() => deleteLog.mutate(log.id)}
+                                            className="p-1 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-400 transition-all">
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -109,5 +120,3 @@ export default function StepTracker() {
         </div>
     );
 }
-
-

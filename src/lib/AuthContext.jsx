@@ -40,12 +40,7 @@ export const AuthProvider = ({ children }) => {
                     localStorage.setItem(lockKey, '1');
                     setTimeout(() => localStorage.removeItem(lockKey), 5000);
 
-                    entities.UserProfile
-                        .filter({ user_email: session.user.email })
-                        .then(profiles => {
-                            if (profiles?.[0]) return updateLoginStreak(profiles[0]);
-                        })
-                        .catch(e => console.error('Streak update failed:', e));
+
                 }
             }
         );

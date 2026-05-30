@@ -83,22 +83,18 @@ export async function updateLoginStreak(profile) {
 export async function syncMissionXP(profile, missionXP, perfectDay) {
     if (!profile?.id) return;
     const todayStr = today();
+    const cacheKey = `mission_xp_synced_${profile.id}_${todayStr}`;
+    const lastSynced = localStorage.getItem(cacheKey);
+    const lastXP = lastSynced ? Number(lastSynced) : 0;
     const bonusXP = perfectDay ? XP_VALUES.perfect_day : 0;
     const totalToday = missionXP + bonusXP;
 
-    // Use DB columns instead of localStorage — more reliable
-    const alreadyAwarded = profile.mission_xp_date === todayStr
-        ? (profile.mission_xp_today || 0)
-        : 0;
+    if (totalToday <= lastXP) return; // already awarded this much or more today
 
-    if (totalToday <= alreadyAwarded) return;
-
-    const diff = totalToday - alreadyAwarded;
-
+    const diff = totalToday - lastXP;
+    localStorage.setItem(cacheKey, String(totalToday));
     return entities.UserProfile.update(profile.id, {
         total_xp: (profile.total_xp || 0) + diff,
-        mission_xp_today: totalToday,
-        mission_xp_date: todayStr,
     });
 }
 

@@ -28,7 +28,7 @@ export default function AdminChallenges() {
 
     const { data: challenges = [], isLoading } = useQuery({
         queryKey: ['challenges'],
-        queryFn: () => entities.Challenge.filter({ is_active: true }, '-created_date'),
+        queryFn: () => entities.Challenge.filter({ is_active: true }, 'created_at'),
     });
 
     const { data: allProfiles = [] } = useQuery({

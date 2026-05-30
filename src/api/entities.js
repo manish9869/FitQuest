@@ -1,5 +1,3 @@
-
-
 import { supabase } from './supabaseClient';
 
 // ── Entity name → Supabase table name ────────────────────────────────────────
@@ -30,6 +28,8 @@ const TABLE_MAP = {
     WorkoutLog: 'workout_logs',
     WorkoutPlan: 'workout_plans',
     WorkoutTemplate: 'workout_templates',
+    Automation: 'automations',
+    Challenge: 'challenges'
 };
 
 // ── Generic entity factory ────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Sparkles, Plus, Trash2, Zap, Bell, MessageSquare, Trophy, AlertTriangle, Droplets, Dumbbell, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,7 +32,7 @@ export default function AdminAutomations() {
 
     const { data: rules = [], isLoading } = useQuery({
         queryKey: ['automations'],
-        queryFn: () => entities.Automation.list('-created_date'),
+        queryFn: () => entities.Automation.list('created_at', false),
     });
 
     const createRule = useMutation({
@@ -104,10 +105,16 @@ export default function AdminAutomations() {
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Trigger: When...</label>
-                                <select value={newRule.trigger} onChange={e => setNewRule(n => ({ ...n, trigger: e.target.value }))}
-                                    className="w-full h-9 px-3 rounded-md bg-secondary border border-white/10 text-sm text-foreground">
-                                    {TRIGGER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
+                                <Select value={newRule.trigger} onValueChange={v => setNewRule(n => ({ ...n, trigger: v }))}>
+                                    <SelectTrigger className="bg-white/5 border-white/10">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {TRIGGER_TYPES.map(t => (
+                                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Threshold Value</label>
@@ -115,10 +122,16 @@ export default function AdminAutomations() {
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Action: Then...</label>
-                                <select value={newRule.action} onChange={e => setNewRule(n => ({ ...n, action: e.target.value }))}
-                                    className="w-full h-9 px-3 rounded-md bg-secondary border border-white/10 text-sm text-foreground">
-                                    {ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
-                                </select>
+                                <Select value={newRule.action} onValueChange={v => setNewRule(n => ({ ...n, action: v }))}>
+                                    <SelectTrigger className="bg-white/5 border-white/10">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {ACTION_TYPES.map(a => (
+                                            <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Action Message / Value</label>
