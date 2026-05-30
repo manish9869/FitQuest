@@ -98,6 +98,10 @@ function MissionForm({ initial, onSave, onClose }) {
                 </div>
                 <div><Label>Target Value</Label><Input type="number" value={form.target_value} onChange={e => setForm(f => ({ ...f, target_value: +e.target.value }))} className="mt-1 bg-white/5 border-white/10" /></div>
             </div>
+            <div>
+                <Label>% of User Goal <span className="text-muted-foreground font-normal text-xs">(optional — e.g. 0.9 = 90% of user's goal)</span></Label>
+                <Input type="number" step="0.05" min="0" max="1" value={form.target_pct_of_goal || ''} onChange={e => setForm(f => ({ ...f, target_pct_of_goal: e.target.value ? +e.target.value : undefined }))} className="mt-1 bg-white/5 border-white/10" placeholder="e.g. 0.9" />
+            </div>
             <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2"><Switch checked={form.is_active} onCheckedChange={v => setForm(f => ({ ...f, is_active: v }))} /><Label>Active</Label></div>
                 <div className="flex items-center gap-2"><Switch checked={form.is_bonus} onCheckedChange={v => setForm(f => ({ ...f, is_bonus: v }))} /><Label>Bonus Challenge</Label></div>
@@ -297,5 +301,3 @@ export default function AdminAchievementsMissions() {
         </div>
     );
 }
-
-
