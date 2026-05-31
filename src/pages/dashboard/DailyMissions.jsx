@@ -142,7 +142,6 @@ export default function DailyMissions() {
     const qc = useQueryClient();
     const todayStr = today();
 
-
     const { data: meals = [] } = useQuery({ queryKey: ['meals', todayStr, user?.email], queryFn: () => entities.MealLog.filter({ user_email: user?.email, date: todayStr }), enabled: !!user?.email });
     const { data: waterLogs = [] } = useQuery({ queryKey: ['water', todayStr, user?.email], queryFn: () => entities.WaterLog.filter({ user_email: user?.email, date: todayStr }), enabled: !!user?.email });
     const { data: stepLogs = [] } = useQuery({ queryKey: ['steps', todayStr, user?.email], queryFn: () => entities.StepLog.filter({ user_email: user?.email, date: todayStr }), enabled: !!user?.email });
@@ -188,20 +187,15 @@ export default function DailyMissions() {
         challenges.filter(ch => checkChallenge(ch, historyData, profile)).map(ch => ch.id),
         [challenges, historyData, profile]);
 
-    // Challenge XP for display only — actual DB award is in the useEffect below
-    const completedChallengeXP = useMemo(() =>
-        completedChallengeIds.reduce((sum, id) => {
-            const ch = challenges.find(c => c.id === id);
-            return sum + (CHALLENGE_XP[ch?.type] || 0);
-        }, 0),
-        [completedChallengeIds, challenges]);
+    // ── FIX #2: Challenge XP is NOT included in "today's earned" display ──
+    // Challenges are persistent achievements, not daily — shown separately below
 
-    // Award challenge XP to DB once per session using sessionStorage guard
+    // Award challenge XP to DB once, using profile.achievements as permanent guard
     useEffect(() => {
-        if (!profile || completedChallengeIds.length === 0) return;
+        if (!profile?.id || completedChallengeIds.length === 0) return;
+        // Guard: only run when challenges have actually loaded
+        if (challenges.length === 0) return;
 
-        // Use profile.achievements array to permanently track awarded challenge IDs
-        // Store them as "challenge_{id}" strings so they don't clash with real achievement IDs
         const currentAwarded = profile.achievements || [];
         const newlyCompleted = completedChallengeIds.filter(
             id => !currentAwarded.includes(`challenge_${id}`)
@@ -226,8 +220,8 @@ export default function DailyMissions() {
             qc.invalidateQueries({ queryKey: ['userProfile'] });
             qc.invalidateQueries({ queryKey: ['all-profiles-lb'] });
         });
-
-    }, [completedChallengeIds.join(','), profile?.id]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [completedChallengeIds.join(','), profile?.id, challenges.length]);
 
     const regularMissions = useMemo(() => allMissions.filter(m => !m.is_bonus), [allMissions]);
     const bonusMissions = useMemo(() => allMissions.filter(m => m.is_bonus), [allMissions]);
@@ -247,17 +241,28 @@ export default function DailyMissions() {
         completedBonuses.reduce((s, b) => s + (b.xp_reward || 0), 0) + (allDone ? XP_PERFECT_DAY : 0),
         [completedBonuses, allDone]);
 
-    // syncXP: only missions + bonuses — watermark tracks these, challenges have own guard
+    // syncXP: only missions + bonuses (challenges handled separately, login streak in xpEngine)
     const syncXP = totalMissionXP + bonusXP;
 
-    // displayXP: everything earned today shown in the UI counter
-    const displayXP = syncXP + completedChallengeXP;
+    // ── FIX #1: displayXP now includes login streak XP ──
+    // Read it from profile: it's already been awarded by DashboardHome's updateLoginStreak()
+    // We add 15 (XP_VALUES.streak_day) only if last_login_date === today
+    const loginStreakXPToday = useMemo(() => {
+        if (!profile) return 0;
+        const lastLogin = profile.last_login_date
+            ? String(profile.last_login_date).slice(0, 10)
+            : null;
+        return lastLogin === todayStr ? 15 : 0;
+    }, [profile, todayStr]);
+
+    // ── FIX #2: displayXP does NOT include challenge XP (that's a persistent reward) ──
+    const displayXP = syncXP + loginStreakXPToday;
 
     const pct = regularMissions.length > 0
         ? Math.round((completedMissions.length / regularMissions.length) * 100)
         : 0;
 
-    // Watermark sync — only for missions+bonuses, writes only the diff
+    // ── FIX #3: Watermark sync — stable deps, guard against profile not loaded ──
     useEffect(() => {
         if (!profile?.id || syncXP === 0) return;
 
@@ -280,7 +285,8 @@ export default function DailyMissions() {
         }).then(() => {
             qc.invalidateQueries({ queryKey: ['userProfile'] });
         });
-
+        // Stable deps — profile.id, the date string, and the already-awarded watermark
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [syncXP, profile?.id, profile?.mission_xp_date, profile?.mission_xp_today]);
 
     const leaderboard = useMemo(() =>
@@ -340,6 +346,30 @@ export default function DailyMissions() {
                 <div className="flex justify-between text-xs text-muted-foreground mt-1">
                     <span>Progress</span><span className="text-yellow-400 font-semibold">{pct}%</span>
                 </div>
+
+                {/* XP breakdown — subtle, collapsible hint */}
+                {displayXP > 0 && (
+                    <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap gap-3 text-xs text-muted-foreground">
+                        {loginStreakXPToday > 0 && (
+                            <span className="flex items-center gap-1">
+                                <Flame className="w-3 h-3 text-orange-400" />
+                                Login streak <span className="text-orange-400 font-semibold">+{loginStreakXPToday}</span>
+                            </span>
+                        )}
+                        {totalMissionXP > 0 && (
+                            <span className="flex items-center gap-1">
+                                <Target className="w-3 h-3 text-yellow-400" />
+                                Missions <span className="text-yellow-400 font-semibold">+{totalMissionXP}</span>
+                            </span>
+                        )}
+                        {bonusXP > 0 && (
+                            <span className="flex items-center gap-1">
+                                <Star className="w-3 h-3 text-emerald-400" />
+                                Bonus <span className="text-emerald-400 font-semibold">+{bonusXP}</span>
+                            </span>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Total XP pill */}
@@ -363,17 +393,20 @@ export default function DailyMissions() {
                 ))}
             </div>
 
-            {/* Active challenges */}
+            {/* Active challenges — separated from daily XP, clearly labeled as persistent */}
             {challenges.length > 0 && (
                 <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
                         <Trophy className="w-4 h-4 text-yellow-400" /> Active Challenges
+                        <span className="text-xs font-normal text-muted-foreground/60 lowercase tracking-normal">(one-time rewards)</span>
                     </h3>
                     {challenges.map((ch, i) => {
                         const conf = TYPE_CONFIG[ch.type] || TYPE_CONFIG.streak;
                         const CIcon = conf.icon;
                         const daysLeft = ch.end_date ? Math.max(0, differenceInDays(new Date(ch.end_date), new Date())) : null;
                         const isCompleted = completedChallengeIds.includes(ch.id);
+                        // ── FIX #2: Show whether XP was already claimed from profile.achievements ──
+                        const alreadyClaimed = (profile?.achievements || []).includes(`challenge_${ch.id}`);
                         const xpReward = CHALLENGE_XP[ch.type] || 100;
 
                         return (
@@ -406,11 +439,13 @@ export default function DailyMissions() {
                                     <div className="text-right flex-shrink-0">
                                         {isCompleted ? (
                                             <div className="flex flex-col items-end gap-0.5">
-                                                <div className="flex items-center gap-1 text-emerald-400">
+                                                <div className={`flex items-center gap-1 ${alreadyClaimed ? 'text-emerald-400' : 'text-yellow-400'}`}>
                                                     <Star className="w-3.5 h-3.5" />
                                                     <span className="font-bold text-sm">+{xpReward}</span>
                                                 </div>
-                                                <div className="text-[10px] text-emerald-400/70">XP awarded!</div>
+                                                <div className={`text-[10px] ${alreadyClaimed ? 'text-emerald-400/70' : 'text-yellow-400/70'}`}>
+                                                    {alreadyClaimed ? 'XP claimed ✓' : 'Claiming…'}
+                                                </div>
                                             </div>
                                         ) : (
                                             <div className="flex items-center gap-1 text-muted-foreground/50">
