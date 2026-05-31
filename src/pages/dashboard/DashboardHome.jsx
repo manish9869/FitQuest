@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/AuthContext';
 import { entities } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { today, calculateFitnessScore, getScoreEmoji, getSmartInsights } from '@/lib/fitnessUtils';
+import { updateLoginStreak } from '@/lib/xpEngine';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { format, subDays, parseISO } from 'date-fns';
@@ -36,10 +37,11 @@ const MiniTooltip = ({ active, payload, label }) => {
     );
 };
 
+// Widgets that need a companion to fill a row — rendered as pairs
 const PAIRED_GROUPS = [
-    ['score', 'stats'],
-    ['macros', 'calorie_trend'],
-    ['bmi', 'weight', 'workout_consistency'],
+    ['score', 'stats'],          // 1/3 + 2/3
+    ['macros', 'calorie_trend'], // 1/2 + 1/2
+    ['bmi', 'weight', 'workout_consistency'], // 1/3 + 1/3 + 1/3
 ];
 
 export default function DashboardHome() {
@@ -65,6 +67,15 @@ export default function DashboardHome() {
     const { data: weightLogs = [] } = useQuery({ queryKey: ['weight-logs', user?.email], queryFn: () => entities.WeightLog.filter({ user_email: user?.email }), enabled: !!user?.email });
 
     useEffect(() => { if (profiles && profiles.length === 0) navigate('/onboarding'); }, [profiles]);
+
+    // Update login streak once per session when profile is loaded
+    useEffect(() => {
+        if (profile?.id) {
+            updateLoginStreak(profile).then(({ streakUpdated }) => {
+                if (streakUpdated) qc.invalidateQueries({ queryKey: ['userProfile'] });
+            });
+        }
+    }, [profile?.id]);
 
     const saveLayout = useMutation({
         mutationFn: (layout) => entities.UserProfile.update(profile.id, { dashboard_layout: layout }),
@@ -141,7 +152,7 @@ export default function DashboardHome() {
     const hour = new Date().getHours();
     const timeOfDay = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
 
-    // All widget renderers stay identical — no changes needed inside them
+    // --- Widget Renderers ---
     const WIDGET_RENDERERS = {
         score: () => (
             <GlassCard className="flex flex-col items-center justify-center py-6">
@@ -156,6 +167,7 @@ export default function DashboardHome() {
                 <p className="text-xs text-muted-foreground text-center mt-4 px-4">Nutrition, hydration, activity & rest</p>
             </GlassCard>
         ),
+
         stats: () => (
             <div className="grid grid-cols-2 gap-3">
                 {[
@@ -189,6 +201,7 @@ export default function DashboardHome() {
                 })}
             </div>
         ),
+
         macros: () => (
             <GlassCard animate={false}>
                 <h3 className="font-semibold mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-emerald-400" /> Today's Macros</h3>
@@ -215,6 +228,7 @@ export default function DashboardHome() {
                 </div>
             </GlassCard>
         ),
+
         quick_actions: () => (
             <GlassCard animate={false}>
                 <h3 className="font-semibold mb-3 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" /> Quick Actions</h3>
@@ -236,6 +250,7 @@ export default function DashboardHome() {
                 </div>
             </GlassCard>
         ),
+
         calorie_trend: () => (
             <GlassCard animate={false} className="p-0 overflow-hidden">
                 <div className="px-5 pt-4 pb-2 flex items-center gap-2">
@@ -269,6 +284,7 @@ export default function DashboardHome() {
                 </ResizableWidget>
             </GlassCard>
         ),
+
         weight: () => (
             <GlassCard animate={false}>
                 <div className="flex items-center justify-between mb-3">
@@ -304,10 +320,12 @@ export default function DashboardHome() {
                 )}
             </GlassCard>
         ),
+
         bmi: () => <BMIWidget />,
         workout_consistency: () => <WorkoutConsistency />,
         habit_grid: () => <HabitStreakGrid />,
         daily_tip: () => <DailyTip />,
+
         insights: () => insights.length === 0 ? null : (
             <GlassCard animate={false}>
                 <h3 className="font-semibold mb-4 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" /> Smart Insights</h3>
@@ -325,6 +343,7 @@ export default function DashboardHome() {
                 </div>
             </GlassCard>
         ),
+
         premium_cards: () => (
             <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
@@ -346,6 +365,7 @@ export default function DashboardHome() {
                 ))}
             </div>
         ),
+
         coach_banner: () => allCoachPlans.length === 0 ? null : (
             <GlassCard animate={false} className="border border-purple-500/20 bg-purple-500/5">
                 <div className="flex items-center justify-between">
@@ -366,6 +386,7 @@ export default function DashboardHome() {
         ),
     };
 
+    // --- Layout-driven rendering ---
     const PAIR_MAP = {
         score: { group: 'top', cols: 'lg:col-span-1', rowCols: 'lg:grid-cols-3' },
         stats: { group: 'top', cols: 'lg:col-span-2', rowCols: 'lg:grid-cols-3' },
@@ -378,6 +399,7 @@ export default function DashboardHome() {
     };
 
     const visibleLayout = layout.filter(w => w.visible);
+
     const rows = [];
     const seen = new Set();
 
@@ -401,10 +423,11 @@ export default function DashboardHome() {
 
     return (
         <div className="space-y-6">
+            {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                     <h1 className="text-2xl font-space font-bold">
-                        Good {timeOfDay}, <span className="text-gradient-green">{user?.user_metadata?.full_name?.split(' ')[0] || 'Athlete'}</span> 👋
+                        Good {timeOfDay}, <span className="text-gradient-green">{user?.full_name?.split(' ')[0] || 'Athlete'}</span> 👋
                     </h1>
                     <p className="text-sm text-muted-foreground mt-0.5">{format(new Date(), 'EEEE')} · Let's crush your goals today</p>
                 </div>
@@ -425,6 +448,7 @@ export default function DashboardHome() {
                 </div>
             </div>
 
+            {/* Dynamic layout driven entirely by saved order */}
             {rows.map((row, i) => {
                 if (row.type === 'group') {
                     return (
@@ -434,7 +458,11 @@ export default function DashboardHome() {
                                 if (!renderer) return null;
                                 const content = renderer();
                                 if (!content) return null;
-                                return <div key={w.id} className="flex-1 min-w-[280px]">{content}</div>;
+                                return (
+                                    <div key={w.id} className="flex-1 min-w-[280px]">
+                                        {content}
+                                    </div>
+                                );
                             })}
                         </div>
                     );
@@ -448,5 +476,3 @@ export default function DashboardHome() {
         </div>
     );
 }
-
-

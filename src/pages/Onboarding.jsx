@@ -53,24 +53,30 @@ export default function Onboarding() {
     const macros = calculateMacros(calorieTarget, data.fitness_goal);
 
     const handleComplete = async () => {
+        if (!user) return;
         setSaving(true);
-        await entities.UserProfile.create({
-            user_email: user.email,
-            ...data,
-            daily_calorie_target: calorieTarget,
-            protein_target: macros.protein,
-            carb_target: macros.carbs,
-            fat_target: macros.fat,
-            water_goal_ml: Math.round(data.weight_kg * 35),
-            step_goal: 10000,
-            onboarding_complete: true,
-            login_streak: 1,
-            total_xp: 100,
-            achievements: ['first_login'],
-            last_login_date: new Date().toISOString().split('T')[0],
-        });
-        setSaving(false);
-        navigate('/dashboard');
+        try {
+            await entities.UserProfile.create({
+                id: user.id,               // auth UUID as primary key — required for RLS
+                user_email: user.email,
+                ...data,
+                daily_calorie_target: calorieTarget,
+                protein_target: macros.protein,
+                carb_target: macros.carbs,
+                fat_target: macros.fat,
+                water_goal_ml: Math.round(data.weight_kg * 35),
+                step_goal: 10000,
+                onboarding_complete: true,
+                achievements: ['first_login'],
+                // login_streak, total_xp, last_login_date are managed by AuthContext
+                // on every SIGNED_IN event — do not set them here
+            });
+            navigate('/dashboard');
+        } catch (err) {
+            console.error('Onboarding failed:', err);
+        } finally {
+            setSaving(false);
+        }
     };
 
     const stepContent = [
@@ -85,7 +91,7 @@ export default function Onboarding() {
                     <Flame className="w-10 h-10 text-black" />
                 </motion.div>
                 <h2 className="text-3xl font-space font-bold text-white">
-                    Welcome, <span className="text-gradient-green">{user?.full_name?.split(' ')[0] || 'Athlete'}</span>!
+                    Welcome, <span className="text-gradient-green">{user?.user_metadata?.full_name?.split(' ')[0] || 'Athlete'}</span>!
                 </h2>
                 <p className="text-muted-foreground mt-2 leading-relaxed">
                     Let's build your personalized transformation plan.<br />
@@ -234,7 +240,7 @@ export default function Onboarding() {
                 ))}
             </div>
             <div className="glass rounded-xl px-4 py-3 border border-emerald-500/20 text-sm text-center text-emerald-300">
-                🎯 Estimated transformation: <span className="font-bold">{Math.abs(data.weight_kg - data.target_weight_kg) > 0 ? `${Math.ceil(Math.abs(data.weight_kg - data.target_weight_kg) / 0.5)} weeks` : 'You\'re at your goal!'}</span>
+                🎯 Estimated transformation: <span className="font-bold">{Math.abs(data.weight_kg - data.target_weight_kg) > 0 ? `${Math.ceil(Math.abs(data.weight_kg - data.target_weight_kg) / 0.5)} weeks` : "You're at your goal!"}</span>
             </div>
         </div>,
     ];
@@ -327,5 +333,3 @@ export default function Onboarding() {
         </div>
     );
 }
-
-

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { entities } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Pencil, Trash2, ChefHat, Clock, Star, Eye, EyeOff } from 'lucide-react';
 import RecipeFormDrawer from '@/components/admin/cms/RecipeFormDrawer';
 
@@ -74,21 +74,36 @@ export default function AdminRecipes() {
             <div className="glass rounded-xl p-4 flex flex-wrap gap-3 items-center">
                 <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search recipes..." className="pl-9 bg-white/5 border-white/10" />
+                    <Input
+                        value={search}
+                        onChange={e => setSearch(e.target.value)}
+                        placeholder="Search recipes..."
+                        className="pl-9 bg-white/5 border-white/10"
+                    />
                 </div>
-                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground">
-                    <option value="all">All Categories</option>
-                    {['breakfast', 'lunch', 'dinner', 'snack', 'pre_workout', 'post_workout'].map(c =>
-                        <option key={c} value={c}>{c.replace('_', ' ')}</option>
-                    )}
-                </select>
-                <select value={filterPremium} onChange={e => setFilterPremium(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground">
-                    <option value="all">All Access</option>
-                    <option value="free">Free</option>
-                    <option value="premium">Premium</option>
-                </select>
+
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                    <SelectTrigger className="w-48 bg-white/5 border-white/10">
+                        <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {['breakfast', 'lunch', 'dinner', 'snack', 'pre_workout', 'post_workout'].map(c => (
+                            <SelectItem key={c} value={c}>{c.replace('_', ' ')}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <Select value={filterPremium} onValueChange={setFilterPremium}>
+                    <SelectTrigger className="w-36 bg-white/5 border-white/10">
+                        <SelectValue placeholder="All Access" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Access</SelectItem>
+                        <SelectItem value="free">Free</SelectItem>
+                        <SelectItem value="premium">Premium</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             {/* Table */}
@@ -158,8 +173,10 @@ export default function AdminRecipes() {
                                             }
                                         </td>
                                         <td className="px-4 py-3">
-                                            <button onClick={() => togglePublish.mutate({ id: r.id, val: !r.is_published })}
-                                                className={`flex items-center gap-1 text-xs ${r.is_published ? 'text-emerald-400' : 'text-muted-foreground'}`}>
+                                            <button
+                                                onClick={() => togglePublish.mutate({ id: r.id, val: !r.is_published })}
+                                                className={`flex items-center gap-1 text-xs ${r.is_published ? 'text-emerald-400' : 'text-muted-foreground'}`}
+                                            >
                                                 {r.is_published ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
                                                 {r.is_published ? 'Live' : 'Hidden'}
                                             </button>
@@ -186,5 +203,3 @@ export default function AdminRecipes() {
         </div>
     );
 }
-
-

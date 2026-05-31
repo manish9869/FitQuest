@@ -3,13 +3,12 @@ import { entities } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
-import { format, subDays, parseISO } from 'date-fns';
+import { format, subDays, parseISO, eachDayOfInterval } from 'date-fns';
 import { today, goalLabels, activityLabels } from '@/lib/fitnessUtils';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine
 } from 'recharts';
-import { motion } from 'framer-motion';
 import GlassCard from '@/components/ui/GlassCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -18,13 +17,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
-    ArrowLeft, User, Flame, Target, Droplets, Footprints, Plus, FileText,
-    MessageSquare, Loader2, Scale, Moon, Dumbbell, Pill, Activity,
-    TrendingDown, TrendingUp, Trophy, Award, Calendar, Heart, Utensils,
-    Camera, Image, Ruler, Zap, Star
+    ArrowLeft, User, Target, FileText, MessageSquare, Loader2,
+    Scale, Moon, Dumbbell, Pill, Activity, Trophy, Utensils,
+    Camera, CalendarRange, ChevronLeft, ChevronRight, Zap
 } from 'lucide-react';
+import UserTasksWidget from '@/pages/admin/UserTasksWidget';
 import { toast } from 'sonner';
 
+// ─── Tooltip ─────────────────────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
@@ -51,100 +51,227 @@ const SectionTab = ({ id, label, icon: Icon, active, onClick }) => (
     </button>
 );
 
+const ACHIEVEMENT_COLORS = {
+    yellow: { bg: 'bg-yellow-500/10', text: 'text-yellow-400', border: 'border-yellow-500/20' },
+    orange: { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20' },
+    red: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20' },
+    emerald: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+    blue: { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' },
+    cyan: { bg: 'bg-cyan-500/10', text: 'text-cyan-400', border: 'border-cyan-500/20' },
+    purple: { bg: 'bg-purple-500/10', text: 'text-purple-400', border: 'border-purple-500/20' },
+    indigo: { bg: 'bg-indigo-500/10', text: 'text-indigo-400', border: 'border-indigo-500/20' },
+    pink: { bg: 'bg-pink-500/10', text: 'text-pink-400', border: 'border-pink-500/20' },
+};
+
+// ─── Chart date-range picker (multi-day) ──────────────────────────────────────
+function ChartRangePicker({ startDate, endDate, onStartChange, onEndChange, onPreset }) {
+    const presets = [{ label: '7d', days: 7 }, { label: '14d', days: 14 }, { label: '30d', days: 30 }, { label: '90d', days: 90 }];
+    return (
+        <div className="flex flex-wrap items-center gap-2">
+            <div className="flex gap-1">
+                {presets.map(p => (
+                    <button key={p.label} onClick={() => onPreset(p.days)}
+                        className="text-xs px-2.5 py-1 rounded-lg font-medium text-muted-foreground hover:bg-white/5 hover:text-white transition-all border border-white/5">
+                        {p.label}
+                    </button>
+                ))}
+            </div>
+            <div className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5">
+                <CalendarRange className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                <input type="date" value={startDate} onChange={e => onStartChange(e.target.value)}
+                    className="bg-transparent text-xs text-white border-none outline-none w-[115px] [color-scheme:dark]" />
+                <span className="text-muted-foreground text-xs">→</span>
+                <input type="date" value={endDate} onChange={e => onEndChange(e.target.value)}
+                    className="bg-transparent text-xs text-white border-none outline-none w-[115px] [color-scheme:dark]" />
+            </div>
+        </div>
+    );
+}
+
+// ─── Single-day picker (for logs) ────────────────────────────────────────────
+function DayPicker({ date, onChange }) {
+    const prev = () => onChange(format(subDays(parseISO(date), 1), 'yyyy-MM-dd'));
+    const next = () => {
+        const n = format(new Date(new Date(date).getTime() + 86400000), 'yyyy-MM-dd');
+        if (n <= format(new Date(), 'yyyy-MM-dd')) onChange(n);
+    };
+    const isToday = date === format(new Date(), 'yyyy-MM-dd');
+    return (
+        <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl px-2 py-1.5">
+            <button onClick={prev} className="p-0.5 rounded hover:bg-white/10 transition-colors">
+                <ChevronLeft className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+            <input type="date" value={date} onChange={e => e.target.value && onChange(e.target.value)}
+                className="bg-transparent text-xs text-white border-none outline-none w-[115px] [color-scheme:dark]" />
+            <button onClick={next} disabled={isToday}
+                className="p-0.5 rounded hover:bg-white/10 transition-colors disabled:opacity-30">
+                <ChevronRight className="w-3.5 h-3.5 text-muted-foreground" />
+            </button>
+            {!isToday && (
+                <button onClick={() => onChange(format(new Date(), 'yyyy-MM-dd'))}
+                    className="text-[10px] text-purple-400 hover:text-purple-300 ml-1 transition-colors">Today</button>
+            )}
+        </div>
+    );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 export default function AdminUserDetail() {
     const navigate = useNavigate();
     const { user: admin } = useAuth();
     const qc = useQueryClient();
     const userId = window.location.pathname.split('/').pop();
     const [activeTab, setActiveTab] = useState('overview');
-    const [chartRange, setChartRange] = useState(14);
 
-    // Fetch all user profiles, find the target by id
-    const { data: allUsers = [] } = useQuery({
-        queryKey: ['admin-users'],
-        queryFn: () => entities.UserProfile.list(),
-    });
+    // Chart range (multi-day) — used for all charts
+    const [chartStart, setChartStart] = useState(format(subDays(new Date(), 13), 'yyyy-MM-dd'));
+    const [chartEnd, setChartEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const handleChartPreset = (days) => {
+        setChartStart(format(subDays(new Date(), days - 1), 'yyyy-MM-dd'));
+        setChartEnd(format(new Date(), 'yyyy-MM-dd'));
+    };
+
+    // Single-day (for log tables)
+    const [selectedDay, setSelectedDay] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+    // Date range as array
+    const chartDates = useMemo(() => {
+        const s = parseISO(chartStart), e = parseISO(chartEnd);
+        if (e < s) return [chartStart];
+        return eachDayOfInterval({ start: s, end: e }).map(d => format(d, 'yyyy-MM-dd'));
+    }, [chartStart, chartEnd]);
+
+    const chartDays = chartDates.length || 1;
+    const rangeLabel = (d) => format(parseISO(d), chartDays <= 31 ? 'MMM d' : 'MMM d');
+
+    // ── Data queries ──────────────────────────────────────────────────────────
+    const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => entities.UserProfile.list() });
     const targetUser = allUsers.find(u => u.id === userId);
-
-    // Use user_email from the profile row
     const email = targetUser?.user_email;
+    const qOpts = { enabled: !!email };
 
-    const { data: profiles = [] } = useQuery({ queryKey: ['aup', email], queryFn: () => entities.UserProfile.filter({ user_email: email }), enabled: !!email });
-    const { data: meals = [] } = useQuery({ queryKey: ['aum', email], queryFn: () => entities.MealLog.filter({ user_email: email }), enabled: !!email });
-    const { data: waterLogs = [] } = useQuery({ queryKey: ['auw', email], queryFn: () => entities.WaterLog.filter({ user_email: email }), enabled: !!email });
-    const { data: stepLogs = [] } = useQuery({ queryKey: ['aus', email], queryFn: () => entities.StepLog.filter({ user_email: email }), enabled: !!email });
-    const { data: workouts = [] } = useQuery({ queryKey: ['auwk', email], queryFn: () => entities.WorkoutLog.filter({ user_email: email }), enabled: !!email });
-    const { data: sleepLogs = [] } = useQuery({ queryKey: ['ausl', email], queryFn: () => entities.SleepLog.filter({ user_email: email }), enabled: !!email });
-    const { data: weightLogs = [] } = useQuery({ queryKey: ['auwt', email], queryFn: () => entities.WeightLog.filter({ user_email: email }), enabled: !!email });
-    const { data: supplements = [] } = useQuery({ queryKey: ['ausupp', email], queryFn: () => entities.UserSupplement.filter({ user_email: email }), enabled: !!email });
-    const { data: notes = [] } = useQuery({ queryKey: ['aun', email], queryFn: () => entities.AdminNote.filter({ user_email: email }), enabled: !!email });
-    const { data: plans = [] } = useQuery({ queryKey: ['aucoa', email], queryFn: () => entities.CoachPlan.filter({ user_email: email }), enabled: !!email });
-    const { data: bodyProgress = [] } = useQuery({ queryKey: ['aubp', email], queryFn: () => entities.BodyProgress.filter({ user_email: email }, 'date', 50), enabled: !!email });
+    // Master achievements table — keyed by achievement_id AND id AND name
+    const { data: masterAchievements = [] } = useQuery({
+        queryKey: ['achievements-master'],
+        queryFn: () => entities.Achievement.list(),
+        staleTime: 300000,
+    });
+    // Also fetch challenges so we can resolve challenge UUIDs
+    const { data: masterChallenges = [] } = useQuery({
+        queryKey: ['challenges-master'],
+        queryFn: () => entities.Challenge.list(),
+        staleTime: 300000,
+    });
 
-    const profile = profiles[0] || targetUser; // fallback to targetUser which is itself a profile
+    const { data: profiles = [] } = useQuery({ queryKey: ['aup', email], queryFn: () => entities.UserProfile.filter({ user_email: email }), ...qOpts });
+    const { data: meals = [] } = useQuery({ queryKey: ['aum', email], queryFn: () => entities.MealLog.filter({ user_email: email }), ...qOpts });
+    const { data: waterLogs = [] } = useQuery({ queryKey: ['auw', email], queryFn: () => entities.WaterLog.filter({ user_email: email }), ...qOpts });
+    const { data: stepLogs = [] } = useQuery({ queryKey: ['aus', email], queryFn: () => entities.StepLog.filter({ user_email: email }), ...qOpts });
+    const { data: workouts = [] } = useQuery({ queryKey: ['auwk', email], queryFn: () => entities.WorkoutLog.filter({ user_email: email }), ...qOpts });
+    const { data: sleepLogs = [] } = useQuery({ queryKey: ['ausl', email], queryFn: () => entities.SleepLog.filter({ user_email: email }), ...qOpts });
+    const { data: weightLogs = [] } = useQuery({ queryKey: ['auwt', email], queryFn: () => entities.WeightLog.filter({ user_email: email }), ...qOpts });
+    const { data: supplements = [] } = useQuery({ queryKey: ['ausupp', email], queryFn: () => entities.UserSupplement.filter({ user_email: email }), ...qOpts });
+    const { data: notes = [] } = useQuery({ queryKey: ['aun', email], queryFn: () => entities.AdminNote.filter({ user_email: email }), ...qOpts });
+    const { data: plans = [] } = useQuery({ queryKey: ['aucoa', email], queryFn: () => entities.CoachPlan.filter({ user_email: email }), ...qOpts });
+    const { data: bodyProgress = [] } = useQuery({ queryKey: ['aubp', email], queryFn: () => entities.BodyProgress.filter({ user_email: email }, 'date', 50), ...qOpts });
 
-    const dateRange = useMemo(() => Array.from({ length: chartRange }, (_, i) =>
-        format(subDays(new Date(), chartRange - 1 - i), 'yyyy-MM-dd')
-    ), [chartRange]);
+    const profile = profiles[0] || targetUser;
 
-    const rangeLabel = (d) => format(new Date(d), chartRange <= 14 ? 'MMM d' : 'MMM d');
+    // ── Unified lookup: achievement_id, uuid, name → achievement row ──────────
+    const achievementLookup = useMemo(() => {
+        const map = {};
+        masterAchievements.forEach(a => {
+            map[a.id] = a;
+            map[a.achievement_id] = a;
+            if (a.name) map[a.name.toLowerCase()] = a;
+        });
+        return map;
+    }, [masterAchievements]);
 
-    const nutritionChartData = useMemo(() => dateRange.map(date => ({
+    // Challenge lookup by id or name
+    const challengeLookup = useMemo(() => {
+        const map = {};
+        masterChallenges.forEach(c => {
+            map[c.id] = c;
+            if (c.name) map[c.name.toLowerCase()] = c;
+        });
+        return map;
+    }, [masterChallenges]);
+
+    // Resolve a raw achievement string to display info
+    const resolveAchievement = (raw) => {
+        // 1. Try achievements table
+        const a = achievementLookup[raw] || achievementLookup[raw?.toLowerCase?.()];
+        if (a) return { name: a.name, icon: a.icon || '🏅', color: a.color || 'yellow', xp: a.xp_reward };
+
+        // 2. Try challenges table (UUIDs stored in achievements array)
+        const c = challengeLookup[raw] || challengeLookup[raw?.toLowerCase?.()];
+        if (c) return { name: `${c.name}`, icon: '🏆', color: 'orange', xp: null };
+
+        // 3. It's a known short string like "xp_500" — humanise it
+        if (raw && !raw.includes('-')) {
+            const pretty = raw.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            return { name: pretty, icon: '⭐', color: 'yellow', xp: null };
+        }
+
+        // 4. Absolute fallback for unresolvable UUIDs — skip rendering
+        return null;
+    };
+
+    // ── Chart data ────────────────────────────────────────────────────────────
+    const nutritionChartData = useMemo(() => chartDates.map(date => ({
         date: rangeLabel(date),
         calories: meals.filter(m => m.date === date).reduce((s, m) => s + (m.calories || 0), 0),
         protein: meals.filter(m => m.date === date).reduce((s, m) => s + (m.protein || 0), 0),
         carbs: meals.filter(m => m.date === date).reduce((s, m) => s + (m.carbs || 0), 0),
-    })), [dateRange, meals]);
+    })), [chartDates, meals]);
 
-    const activityChartData = useMemo(() => dateRange.map(date => ({
+    const activityChartData = useMemo(() => chartDates.map(date => ({
         date: rangeLabel(date),
         steps: stepLogs.filter(s => s.date === date).reduce((s, st) => s + (st.steps || 0), 0),
         water: waterLogs.filter(w => w.date === date).reduce((s, w) => s + (w.amount_ml || 0), 0),
         workouts: workouts.filter(w => w.date === date).length,
-    })), [dateRange, stepLogs, waterLogs, workouts]);
+    })), [chartDates, stepLogs, waterLogs, workouts]);
 
-    const sleepChartData = useMemo(() => dateRange.map(date => ({
+    const sleepChartData = useMemo(() => chartDates.map(date => ({
         date: rangeLabel(date),
         hours: sleepLogs.filter(s => s.date === date).reduce((s, sl) => s + (sl.hours || 0), 0),
-    })), [dateRange, sleepLogs]);
+    })), [chartDates, sleepLogs]);
 
     const weightChartData = useMemo(() =>
-        [...weightLogs]
+        weightLogs
+            .filter(l => l.date >= chartStart && l.date <= chartEnd)
             .sort((a, b) => a.date.localeCompare(b.date))
             .map(l => ({ date: format(parseISO(l.date), 'MMM d'), weight: l.weight_kg })),
-        [weightLogs]);
+        [weightLogs, chartStart, chartEnd]);
 
-    const last7start = format(subDays(new Date(), 7), 'yyyy-MM-dd');
-    const totalWorkouts7 = workouts.filter(w => w.date >= last7start).length;
-    const avgCalories7 = useMemo(() => {
-        const days = dateRange.slice(-7);
-        const total = days.reduce((s, d) => s + meals.filter(m => m.date === d).reduce((ss, m) => ss + (m.calories || 0), 0), 0);
-        return Math.round(total / 7);
-    }, [dateRange, meals]);
-    const avgSleep7 = useMemo(() => {
-        const recent = sleepLogs.filter(s => s.date >= last7start);
-        return recent.length ? (recent.reduce((s, sl) => s + (sl.hours || 0), 0) / recent.length).toFixed(1) : '—';
-    }, [sleepLogs]);
-    const avgSteps7 = useMemo(() => {
-        const days = dateRange.slice(-7);
-        const total = days.reduce((s, d) => s + stepLogs.filter(st => st.date === d).reduce((ss, st) => ss + (st.steps || 0), 0), 0);
-        return Math.round(total / 7);
-    }, [dateRange, stepLogs]);
+    // ── Day-filtered log data ─────────────────────────────────────────────────
+    const dayMeals = useMemo(() => meals.filter(m => m.date === selectedDay), [meals, selectedDay]);
+    const dayWater = useMemo(() => waterLogs.filter(w => w.date === selectedDay), [waterLogs, selectedDay]);
+    const daySteps = useMemo(() => stepLogs.filter(s => s.date === selectedDay), [stepLogs, selectedDay]);
+    const dayWorkouts = useMemo(() => workouts.filter(w => w.date === selectedDay), [workouts, selectedDay]);
+    const daySleep = useMemo(() => sleepLogs.filter(s => s.date === selectedDay), [sleepLogs, selectedDay]);
+    const dayWeight = useMemo(() => weightLogs.filter(l => l.date === selectedDay), [weightLogs, selectedDay]);
+    const dayProgress = useMemo(() => bodyProgress.filter(b => b.date === selectedDay), [bodyProgress, selectedDay]);
 
+    // ── KPI summaries (last 7 days always, independent of filters) ───────────
+    const last7start = format(subDays(new Date(), 6), 'yyyy-MM-dd');
+    const workouts7 = workouts.filter(w => w.date >= last7start).length;
+    const avgCal7 = useMemo(() => { const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')); const t = d.reduce((s, dt) => s + meals.filter(m => m.date === dt).reduce((ss, m) => ss + (m.calories || 0), 0), 0); return Math.round(t / 7); }, [meals]);
+    const avgSleep7 = useMemo(() => { const r = sleepLogs.filter(s => s.date >= last7start); return r.length ? (r.reduce((s, sl) => s + (sl.hours || 0), 0) / r.length).toFixed(1) : '—'; }, [sleepLogs]);
+    const avgSteps7 = useMemo(() => { const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')); const t = d.reduce((s, dt) => s + stepLogs.filter(st => st.date === dt).reduce((ss, st) => ss + (st.steps || 0), 0), 0); return Math.round(t / 7); }, [stepLogs]);
     const latestWeight = [...weightLogs].sort((a, b) => b.date.localeCompare(a.date))[0];
     const streak = profile?.login_streak || 0;
     const status = streak > 3 ? 'Active' : streak > 0 ? 'At Risk' : 'Inactive';
-    const statusColor = status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-        : status === 'At Risk' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-            : 'bg-red-500/10 text-red-400 border-red-500/20';
+    const statusColor = status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : status === 'At Risk' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20';
 
+    // ── Mutations ─────────────────────────────────────────────────────────────
     const [planOpen, setPlanOpen] = useState(false);
     const [planForm, setPlanForm] = useState({ plan_type: 'nutrition', title: '', description: '', calorie_target: '', protein_target: '', step_target: '', water_target_ml: '', notes: '' });
     const createPlan = useMutation({
         mutationFn: (data) => entities.CoachPlan.create({ ...data, user_email: email, assigned_by: admin?.email, status: 'active', start_date: today() }),
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['aucoa'] }); setPlanOpen(false); toast.success('Plan assigned!'); },
     });
-
     const [noteOpen, setNoteOpen] = useState(false);
     const [noteForm, setNoteForm] = useState({ note: '', category: 'general' });
     const createNote = useMutation({
@@ -166,21 +293,65 @@ export default function AdminUserDetail() {
         { id: 'sleep', label: 'Sleep', icon: Moon },
         { id: 'supplements', label: 'Supplements', icon: Pill },
         { id: 'plans', label: 'Plans & Notes', icon: FileText },
-        { id: 'body_progress', label: 'Body Progress', icon: Camera },
+        { id: 'body_progress', label: 'Body Progress', icon: Camera }, { id: 'tasks', label: 'Tasks', icon: Zap },
     ];
 
-    const RangeSelector = () => (
-        <div className="flex gap-1">
-            {[7, 14, 30].map(r => (
-                <button key={r} onClick={() => setChartRange(r)}
-                    className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${chartRange === r ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'text-muted-foreground hover:bg-white/5'}`}>
-                    {r}d
-                </button>
-            ))}
-        </div>
-    );
+    // Tabs that use the day picker for log tables
+    const DAY_TABS = ['nutrition', 'activity', 'weight', 'sleep', 'body_progress'];
+    // Tabs that show charts (use chart range)
+    const CHART_TABS = ['overview', 'nutrition', 'activity', 'weight', 'sleep'];
 
     const displayName = targetUser.user_email?.split('@')[0] || targetUser.user_email;
+
+    // ── Achievement badge renderer ─────────────────────────────────────────────
+    const AchievementBadges = () => {
+        const rawList = profile?.achievements || [];
+        if (!rawList.length) return <p className="text-sm text-muted-foreground italic">No achievements yet.</p>;
+
+        const resolved = rawList.map((raw, i) => ({ raw, info: resolveAchievement(raw), i }));
+        const visible = resolved.filter(r => r.info !== null);
+
+        if (!visible.length) return <p className="text-sm text-muted-foreground italic">No achievements yet.</p>;
+
+        return (
+            <div className="flex flex-wrap gap-2">
+                {visible.map(({ raw, info, i }) => {
+                    const c = ACHIEVEMENT_COLORS[info.color] || ACHIEVEMENT_COLORS.yellow;
+                    return (
+                        <div key={i} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold ${c.bg} ${c.text} ${c.border}`}>
+                            <span>{info.icon}</span>
+                            <span>{info.name}</span>
+                            {info.xp && <span className="opacity-60">+{info.xp}xp</span>}
+                        </div>
+                    );
+                })}
+            </div>
+        );
+    };
+
+    // ── Shared filter bar shown at top of relevant tabs ───────────────────────
+    const FilterBar = () => {
+        const showChart = CHART_TABS.includes(activeTab);
+        const showDay = DAY_TABS.includes(activeTab);
+        if (!showChart && !showDay) return null;
+        return (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 glass rounded-xl px-4 py-3 border border-white/5">
+                {showChart && (
+                    <div className="flex flex-col gap-1 flex-1">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Chart range</span>
+                        <ChartRangePicker startDate={chartStart} endDate={chartEnd} onStartChange={setChartStart} onEndChange={setChartEnd} onPreset={handleChartPreset} />
+                    </div>
+                )}
+                {showChart && showDay && <div className="hidden sm:block w-px h-10 bg-white/10" />}
+                {showDay && (
+                    <div className="flex flex-col gap-1">
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Log date</span>
+                        <DayPicker date={selectedDay} onChange={setSelectedDay} />
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     return (
         <div className="space-y-5">
@@ -188,7 +359,7 @@ export default function AdminUserDetail() {
                 <ArrowLeft className="w-4 h-4 mr-2" /> Back to Users
             </Button>
 
-            {/* Header */}
+            {/* ── Header card ── */}
             <GlassCard className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
                     <div className="w-16 h-16 rounded-2xl bg-purple-500/20 flex items-center justify-center text-2xl font-bold text-purple-400">
@@ -199,22 +370,17 @@ export default function AdminUserDetail() {
                         <p className="text-sm text-muted-foreground">{targetUser.user_email}</p>
                         <div className="flex flex-wrap items-center gap-2 mt-1.5">
                             <span className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold ${statusColor}`}>{status}</span>
-                            <span className="text-xs text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">
-                                {goalLabels[profile?.fitness_goal] || 'No goal set'}
-                            </span>
-                            <span className="text-xs text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">
-                                {profile?.activity_level ? activityLabels[profile.activity_level] : '—'}
-                            </span>
+                            <span className="text-xs text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">{goalLabels[profile?.fitness_goal] || 'No goal set'}</span>
+                            <span className="text-xs text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">{profile?.activity_level ? activityLabels[profile.activity_level] : '—'}</span>
                             <span className="text-xs text-orange-400 font-semibold">{streak} 🔥</span>
                         </div>
                     </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
+                    {/* Assign Plan dialog */}
                     <Dialog open={planOpen} onOpenChange={setPlanOpen}>
                         <DialogTrigger asChild>
-                            <Button className="bg-purple-500 hover:bg-purple-600 text-white rounded-xl">
-                                <FileText className="w-4 h-4 mr-2" /> Assign Plan
-                            </Button>
+                            <Button className="bg-purple-500 hover:bg-purple-600 text-white rounded-xl"><FileText className="w-4 h-4 mr-2" /> Assign Plan</Button>
                         </DialogTrigger>
                         <DialogContent className="glass border-white/10 max-w-lg">
                             <DialogHeader><DialogTitle>Assign Coach Plan</DialogTitle></DialogHeader>
@@ -238,27 +404,18 @@ export default function AdminUserDetail() {
                                     <div><Label>Water (ml)</Label><Input type="number" value={planForm.water_target_ml} onChange={e => setPlanForm(f => ({ ...f, water_target_ml: e.target.value }))} className="mt-1 bg-white/5 border-white/10" /></div>
                                 </div>
                                 <div><Label>Notes</Label><Textarea value={planForm.notes} onChange={e => setPlanForm(f => ({ ...f, notes: e.target.value }))} className="mt-1 bg-white/5 border-white/10" /></div>
-                                <Button className="w-full bg-purple-500 hover:bg-purple-600"
-                                    disabled={!planForm.title || createPlan.isPending}
-                                    onClick={() => createPlan.mutate({
-                                        ...planForm,
-                                        calorie_target: Number(planForm.calorie_target) || undefined,
-                                        protein_target: Number(planForm.protein_target) || undefined,
-                                        step_target: Number(planForm.step_target) || undefined,
-                                        water_target_ml: Number(planForm.water_target_ml) || undefined,
-                                    })}>
-                                    {createPlan.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                    Assign Plan
+                                <Button className="w-full bg-purple-500 hover:bg-purple-600" disabled={!planForm.title || createPlan.isPending}
+                                    onClick={() => createPlan.mutate({ ...planForm, calorie_target: Number(planForm.calorie_target) || undefined, protein_target: Number(planForm.protein_target) || undefined, step_target: Number(planForm.step_target) || undefined, water_target_ml: Number(planForm.water_target_ml) || undefined })}>
+                                    {createPlan.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Assign Plan
                                 </Button>
                             </div>
                         </DialogContent>
                     </Dialog>
 
+                    {/* Add Note dialog */}
                     <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
                         <DialogTrigger asChild>
-                            <Button variant="outline" className="border-white/10 rounded-xl">
-                                <MessageSquare className="w-4 h-4 mr-2" /> Add Note
-                            </Button>
+                            <Button variant="outline" className="border-white/10 rounded-xl"><MessageSquare className="w-4 h-4 mr-2" /> Add Note</Button>
                         </DialogTrigger>
                         <DialogContent className="glass border-white/10">
                             <DialogHeader><DialogTitle>Add Note</DialogTitle></DialogHeader>
@@ -275,14 +432,9 @@ export default function AdminUserDetail() {
                                         </SelectContent>
                                     </Select>
                                 </div>
-                                <div><Label>Note</Label>
-                                    <Textarea value={noteForm.note} onChange={e => setNoteForm(f => ({ ...f, note: e.target.value }))} className="mt-1 bg-white/5 border-white/10" rows={4} />
-                                </div>
-                                <Button className="w-full bg-emerald-500 hover:bg-emerald-600 text-black"
-                                    disabled={!noteForm.note || createNote.isPending}
-                                    onClick={() => createNote.mutate(noteForm)}>
-                                    {createNote.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                                    Save Note
+                                <div><Label>Note</Label><Textarea value={noteForm.note} onChange={e => setNoteForm(f => ({ ...f, note: e.target.value }))} className="mt-1 bg-white/5 border-white/10" rows={4} /></div>
+                                <Button className="w-full bg-emerald-500 hover:bg-emerald-600 text-black" disabled={!noteForm.note || createNote.isPending} onClick={() => createNote.mutate(noteForm)}>
+                                    {createNote.isPending && <Loader2 className="w-4 h-4 animate-spin mr-2" />} Save Note
                                 </Button>
                             </div>
                         </DialogContent>
@@ -290,41 +442,36 @@ export default function AdminUserDetail() {
                 </div>
             </GlassCard>
 
-            {/* Summary KPIs */}
+            {/* ── KPI row ── */}
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
                 <StatBadge label="Current Weight" value={latestWeight ? `${latestWeight.weight_kg}kg` : '—'} color="text-emerald-400" />
                 <StatBadge label="Target Weight" value={profile?.target_weight_kg ? `${profile.target_weight_kg}kg` : '—'} color="text-yellow-400" />
-                <StatBadge label="Avg Calories" value={avgCalories7 || '—'} sub="7-day avg" color="text-white" />
+                <StatBadge label="Avg Calories" value={avgCal7 || '—'} sub="7-day avg" color="text-white" />
                 <StatBadge label="Avg Steps" value={avgSteps7 ? avgSteps7.toLocaleString() : '—'} sub="7-day avg" color="text-orange-400" />
-                <StatBadge label="Workouts" value={totalWorkouts7} sub="last 7 days" color="text-purple-400" />
+                <StatBadge label="Workouts" value={workouts7} sub="last 7 days" color="text-purple-400" />
                 <StatBadge label="Avg Sleep" value={avgSleep7 !== '—' ? `${avgSleep7}h` : '—'} sub="7-day avg" color="text-blue-400" />
                 <StatBadge label="Total XP" value={(profile?.total_xp || 0).toLocaleString()} color="text-yellow-400" />
                 <StatBadge label="Streak" value={`${streak}🔥`} sub="login days" color="text-orange-400" />
             </div>
 
-            {/* Tabs */}
+            {/* ── Tabs ── */}
             <div className="flex gap-1.5 flex-wrap">
                 {tabs.map(t => <SectionTab key={t.id} {...t} active={activeTab === t.id} onClick={setActiveTab} />)}
             </div>
 
-            {/* OVERVIEW TAB */}
+            {/* ── Contextual filter bar ── */}
+            <FilterBar />
+
+            {/* ══════════════ OVERVIEW ══════════════ */}
             {activeTab === 'overview' && (
                 <div className="space-y-5">
                     <div className="grid lg:grid-cols-3 gap-5">
                         <GlassCard animate={false}>
                             <h3 className="font-semibold mb-4 flex items-center gap-2"><User className="w-4 h-4 text-purple-400" /> Profile</h3>
                             <div className="space-y-2.5 text-sm">
-                                {[
-                                    ['Age', profile?.age ? `${profile.age} yrs` : '—'],
-                                    ['Height', profile?.height_cm ? `${profile.height_cm} cm` : '—'],
-                                    ['Starting Weight', profile?.weight_kg ? `${profile.weight_kg} kg` : '—'],
-                                    ['Fitness Goal', goalLabels[profile?.fitness_goal] || '—'],
-                                    ['Activity Level', activityLabels[profile?.activity_level] || '—'],
-                                    ['Workout Freq.', profile?.workout_frequency ? `${profile.workout_frequency}x/week` : '—'],
-                                ].map(([k, v]) => (
+                                {[['Age', profile?.age ? `${profile.age} yrs` : '—'], ['Height', profile?.height_cm ? `${profile.height_cm} cm` : '—'], ['Starting Weight', profile?.weight_kg ? `${profile.weight_kg} kg` : '—'], ['Fitness Goal', goalLabels[profile?.fitness_goal] || '—'], ['Activity Level', activityLabels[profile?.activity_level] || '—'], ['Workout Freq.', profile?.workout_frequency ? `${profile.workout_frequency}x/week` : '—']].map(([k, v]) => (
                                     <div key={k} className="flex justify-between border-b border-white/5 pb-2 last:border-0">
-                                        <span className="text-muted-foreground">{k}</span>
-                                        <span className="font-medium">{v}</span>
+                                        <span className="text-muted-foreground">{k}</span><span className="font-medium">{v}</span>
                                     </div>
                                 ))}
                             </div>
@@ -332,32 +479,16 @@ export default function AdminUserDetail() {
                         <GlassCard animate={false}>
                             <h3 className="font-semibold mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-emerald-400" /> Daily Targets</h3>
                             <div className="space-y-2.5 text-sm">
-                                {[
-                                    ['Calories', profile?.daily_calorie_target ? `${profile.daily_calorie_target} kcal` : '—', 'text-emerald-400'],
-                                    ['Protein', profile?.protein_target ? `${profile.protein_target}g` : '—', 'text-blue-400'],
-                                    ['Carbs', profile?.carb_target ? `${profile.carb_target}g` : '—', 'text-yellow-400'],
-                                    ['Fat', profile?.fat_target ? `${profile.fat_target}g` : '—', 'text-purple-400'],
-                                    ['Water', profile?.water_goal_ml ? `${profile.water_goal_ml}ml` : '—', 'text-cyan-400'],
-                                    ['Steps', profile?.step_goal ? profile.step_goal.toLocaleString() : '—', 'text-orange-400'],
-                                ].map(([k, v, c]) => (
+                                {[['Calories', profile?.daily_calorie_target ? `${profile.daily_calorie_target} kcal` : '—', 'text-emerald-400'], ['Protein', profile?.protein_target ? `${profile.protein_target}g` : '—', 'text-blue-400'], ['Carbs', profile?.carb_target ? `${profile.carb_target}g` : '—', 'text-yellow-400'], ['Fat', profile?.fat_target ? `${profile.fat_target}g` : '—', 'text-purple-400'], ['Water', profile?.water_goal_ml ? `${profile.water_goal_ml}ml` : '—', 'text-cyan-400'], ['Steps', profile?.step_goal ? profile.step_goal.toLocaleString() : '—', 'text-orange-400']].map(([k, v, c]) => (
                                     <div key={k} className="flex justify-between border-b border-white/5 pb-2 last:border-0">
-                                        <span className="text-muted-foreground">{k}</span>
-                                        <span className={`font-semibold ${c}`}>{v}</span>
+                                        <span className="text-muted-foreground">{k}</span><span className={`font-semibold ${c}`}>{v}</span>
                                     </div>
                                 ))}
                             </div>
                         </GlassCard>
                         <GlassCard animate={false}>
                             <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements</h3>
-                            {(!profile?.achievements || profile.achievements.length === 0) ? (
-                                <p className="text-sm text-muted-foreground italic">No achievements yet.</p>
-                            ) : (
-                                <div className="flex flex-wrap gap-2">
-                                    {profile.achievements.map(a => (
-                                        <span key={a} className="text-xs bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 px-2.5 py-1 rounded-full">{a}</span>
-                                    ))}
-                                </div>
-                            )}
+                            <AchievementBadges />
                             <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-3 text-center">
                                 <div>
                                     <div className="text-xl font-bold text-yellow-400">{profile?.total_xp?.toLocaleString() || 0}</div>
@@ -372,10 +503,7 @@ export default function AdminUserDetail() {
                     </div>
                     <div className="grid lg:grid-cols-2 gap-5">
                         <GlassCard animate={false}>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-semibold">Calories Overview</h3>
-                                <RangeSelector />
-                            </div>
+                            <h3 className="font-semibold mb-4">Calories Overview <span className="text-xs text-muted-foreground font-normal">({chartStart} → {chartEnd})</span></h3>
                             <ResponsiveContainer width="100%" height={180}>
                                 <AreaChart data={nutritionChartData}>
                                     <defs><linearGradient id="cg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} /><stop offset="100%" stopColor="#22c55e" stopOpacity={0} /></linearGradient></defs>
@@ -389,10 +517,7 @@ export default function AdminUserDetail() {
                             </ResponsiveContainer>
                         </GlassCard>
                         <GlassCard animate={false}>
-                            <div className="flex items-center justify-between mb-4">
-                                <h3 className="font-semibold">Steps Overview</h3>
-                                <RangeSelector />
-                            </div>
+                            <h3 className="font-semibold mb-4">Steps Overview <span className="text-xs text-muted-foreground font-normal">({chartStart} → {chartEnd})</span></h3>
                             <ResponsiveContainer width="100%" height={180}>
                                 <BarChart data={activityChartData}>
                                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -408,13 +533,9 @@ export default function AdminUserDetail() {
                 </div>
             )}
 
-            {/* NUTRITION TAB */}
+            {/* ══════════════ NUTRITION ══════════════ */}
             {activeTab === 'nutrition' && (
                 <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-lg">Nutrition Analysis</h3>
-                        <RangeSelector />
-                    </div>
                     <div className="grid lg:grid-cols-2 gap-5">
                         <GlassCard animate={false}>
                             <h4 className="font-medium mb-4 text-emerald-400">Calories vs Target</h4>
@@ -444,36 +565,42 @@ export default function AdminUserDetail() {
                             </ResponsiveContainer>
                         </GlassCard>
                     </div>
+                    {/* Day log */}
                     <GlassCard animate={false}>
-                        <h4 className="font-medium mb-4">Recent Meals ({meals.length} total)</h4>
+                        <h4 className="font-medium mb-4">Meals on {format(parseISO(selectedDay), 'EEEE, MMM d')} <span className="text-muted-foreground text-xs font-normal">({dayMeals.length} entries)</span></h4>
                         <div className="space-y-2 max-h-72 overflow-y-auto">
-                            {[...meals].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map(m => (
+                            {dayMeals.length === 0 && <p className="text-sm text-muted-foreground italic">No meals logged on this day.</p>}
+                            {dayMeals.map(m => (
                                 <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/3 text-sm">
                                     <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-                                        {m.photo_url ? <img src={m.photo_url} alt={m.food_name} className="w-full h-full object-cover" /> : <Utensils className="w-3.5 h-3.5 text-emerald-400" />}
+                                        {m.photo_url ? <img src={m.photo_url} alt="" className="w-full h-full object-cover" /> : <Utensils className="w-3.5 h-3.5 text-emerald-400" />}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         <div className="font-medium truncate">{m.food_name}</div>
-                                        <div className="text-xs text-muted-foreground">{m.date} · {m.meal_type}</div>
+                                        <div className="text-xs text-muted-foreground capitalize">{m.meal_type}</div>
                                     </div>
                                     <div className="text-right text-xs">
                                         <div className="text-emerald-400 font-semibold">{m.calories || 0} kcal</div>
-                                        <div className="text-muted-foreground">{m.protein || 0}g P</div>
+                                        <div className="text-muted-foreground">{m.protein || 0}g P · {m.carbs || 0}g C</div>
                                     </div>
                                 </div>
                             ))}
                         </div>
+                        {dayMeals.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-white/5 flex gap-4 text-xs text-muted-foreground">
+                                <span>Total: <span className="text-white font-semibold">{dayMeals.reduce((s, m) => s + (m.calories || 0), 0)} kcal</span></span>
+                                <span>Protein: <span className="text-blue-400 font-semibold">{dayMeals.reduce((s, m) => s + (m.protein || 0), 0)}g</span></span>
+                                <span>Carbs: <span className="text-purple-400 font-semibold">{dayMeals.reduce((s, m) => s + (m.carbs || 0), 0)}g</span></span>
+                                <span>Fat: <span className="text-yellow-400 font-semibold">{dayMeals.reduce((s, m) => s + (m.fats || 0), 0)}g</span></span>
+                            </div>
+                        )}
                     </GlassCard>
                 </div>
             )}
 
-            {/* ACTIVITY TAB */}
+            {/* ══════════════ ACTIVITY ══════════════ */}
             {activeTab === 'activity' && (
                 <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-lg">Activity & Training</h3>
-                        <RangeSelector />
-                    </div>
                     <div className="grid lg:grid-cols-2 gap-5">
                         <GlassCard animate={false}>
                             <h4 className="font-medium mb-4 text-orange-400">Daily Steps</h4>
@@ -503,34 +630,53 @@ export default function AdminUserDetail() {
                             </ResponsiveContainer>
                         </GlassCard>
                     </div>
-                    <GlassCard animate={false}>
-                        <h4 className="font-medium mb-4">Workout History ({workouts.length} sessions)</h4>
-                        <div className="space-y-2 max-h-72 overflow-y-auto">
-                            {[...workouts].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20).map(w => (
-                                <div key={w.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3">
-                                    <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0">
-                                        <Dumbbell className="w-4 h-4 text-purple-400" />
+                    {/* Day logs */}
+                    <div className="grid lg:grid-cols-2 gap-5">
+                        <GlassCard animate={false}>
+                            <h4 className="font-medium mb-4">Workouts on {format(parseISO(selectedDay), 'MMM d')} <span className="text-muted-foreground text-xs">({dayWorkouts.length})</span></h4>
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {dayWorkouts.length === 0 && <p className="text-sm text-muted-foreground italic">No workouts logged.</p>}
+                                {dayWorkouts.map(w => (
+                                    <div key={w.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3">
+                                        <div className="w-9 h-9 rounded-xl bg-purple-500/10 flex items-center justify-center flex-shrink-0"><Dumbbell className="w-4 h-4 text-purple-400" /></div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="font-medium text-sm truncate">{w.name}</div>
+                                            <div className="text-xs text-muted-foreground capitalize">{w.workout_type} · {w.intensity}</div>
+                                        </div>
+                                        <div className="text-right text-xs flex-shrink-0">
+                                            <div className="text-purple-400 font-semibold">{w.duration_min || 0} min</div>
+                                            {w.calories_burned && <div className="text-muted-foreground">{w.calories_burned} kcal</div>}
+                                        </div>
                                     </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="font-medium text-sm truncate">{w.name}</div>
-                                        <div className="text-xs text-muted-foreground">{w.date} · {w.workout_type} · {w.intensity}</div>
-                                    </div>
-                                    <div className="text-right text-xs flex-shrink-0">
-                                        <div className="text-purple-400 font-semibold">{w.duration_min || 0} min</div>
-                                        {w.calories_burned && <div className="text-muted-foreground">{w.calories_burned} kcal</div>}
-                                    </div>
+                                ))}
+                            </div>
+                        </GlassCard>
+                        <GlassCard animate={false}>
+                            <h4 className="font-medium mb-4">Steps & Water on {format(parseISO(selectedDay), 'MMM d')}</h4>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between p-3 rounded-xl bg-orange-500/5 border border-orange-500/10">
+                                    <span className="text-sm text-muted-foreground">Steps logged</span>
+                                    <span className="font-bold text-orange-400">{daySteps.reduce((s, st) => s + (st.steps || 0), 0).toLocaleString()}</span>
                                 </div>
-                            ))}
-                            {workouts.length === 0 && <p className="text-sm text-muted-foreground italic p-2">No workouts logged.</p>}
-                        </div>
-                    </GlassCard>
+                                <div className="flex items-center justify-between p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/10">
+                                    <span className="text-sm text-muted-foreground">Water intake</span>
+                                    <span className="font-bold text-cyan-400">{dayWater.reduce((s, w) => s + (w.amount_ml || 0), 0)} ml</span>
+                                </div>
+                                {daySteps[0]?.calories_burned && (
+                                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/3 border border-white/5">
+                                        <span className="text-sm text-muted-foreground">Calories burned (steps)</span>
+                                        <span className="font-bold text-white">{daySteps[0].calories_burned}</span>
+                                    </div>
+                                )}
+                            </div>
+                        </GlassCard>
+                    </div>
                 </div>
             )}
 
-            {/* WEIGHT TAB */}
+            {/* ══════════════ WEIGHT ══════════════ */}
             {activeTab === 'weight' && (
                 <div className="space-y-5">
-                    <h3 className="font-semibold text-lg">Weight Progress</h3>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <StatBadge label="Current" value={latestWeight ? `${latestWeight.weight_kg}kg` : '—'} color="text-white" />
                         <StatBadge label="Starting" value={profile?.weight_kg ? `${profile.weight_kg}kg` : '—'} color="text-blue-400" />
@@ -540,9 +686,9 @@ export default function AdminUserDetail() {
                             color={latestWeight && profile?.weight_kg && latestWeight.weight_kg < profile.weight_kg ? 'text-emerald-400' : 'text-red-400'} />
                     </div>
                     <GlassCard animate={false}>
-                        <h4 className="font-medium mb-4 text-emerald-400">Weight Trend ({weightLogs.length} entries)</h4>
+                        <h4 className="font-medium mb-4 text-emerald-400">Weight Trend <span className="text-muted-foreground text-xs font-normal">({chartStart} → {chartEnd})</span></h4>
                         {weightChartData.length < 2 ? (
-                            <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">Not enough data to show chart</div>
+                            <div className="h-48 flex items-center justify-center text-sm text-muted-foreground">Not enough data in selected chart range</div>
                         ) : (
                             <ResponsiveContainer width="100%" height={240}>
                                 <LineChart data={weightChartData}>
@@ -557,31 +703,26 @@ export default function AdminUserDetail() {
                         )}
                     </GlassCard>
                     <GlassCard animate={false}>
-                        <h4 className="font-medium mb-3">All Weight Entries</h4>
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {[...weightLogs].sort((a, b) => b.date.localeCompare(a.date)).map(l => (
-                                <div key={l.id} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/3 text-sm">
+                        <h4 className="font-medium mb-3">Weight on {format(parseISO(selectedDay), 'EEEE, MMM d')}</h4>
+                        {dayWeight.length === 0
+                            ? <p className="text-sm text-muted-foreground italic">No weight entry on this day.</p>
+                            : dayWeight.map(l => (
+                                <div key={l.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3 text-sm">
                                     <Scale className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                    <span className="font-bold">{l.weight_kg} kg</span>
-                                    <span className="text-muted-foreground text-xs">{format(parseISO(l.date), 'EEEE, MMM d yyyy')}</span>
-                                    {l.notes && <span className="text-xs text-muted-foreground/60 truncate ml-auto">{l.notes}</span>}
+                                    <span className="font-bold text-lg">{l.weight_kg} kg</span>
+                                    {l.notes && <span className="text-xs text-muted-foreground/60">{l.notes}</span>}
                                 </div>
-                            ))}
-                            {weightLogs.length === 0 && <p className="text-sm text-muted-foreground italic">No weight entries.</p>}
-                        </div>
+                            ))
+                        }
                     </GlassCard>
                 </div>
             )}
 
-            {/* SLEEP TAB */}
+            {/* ══════════════ SLEEP ══════════════ */}
             {activeTab === 'sleep' && (
                 <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-lg">Sleep Analysis</h3>
-                        <RangeSelector />
-                    </div>
                     <GlassCard animate={false}>
-                        <h4 className="font-medium mb-4 text-blue-400">Sleep Duration</h4>
+                        <h4 className="font-medium mb-4 text-blue-400">Sleep Duration <span className="text-muted-foreground text-xs font-normal">({chartStart} → {chartEnd})</span></h4>
                         <ResponsiveContainer width="100%" height={220}>
                             <BarChart data={sleepChartData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -594,87 +735,73 @@ export default function AdminUserDetail() {
                         </ResponsiveContainer>
                     </GlassCard>
                     <GlassCard animate={false}>
-                        <h4 className="font-medium mb-3">Sleep Log ({sleepLogs.length} entries)</h4>
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
-                            {[...sleepLogs].sort((a, b) => b.date.localeCompare(a.date)).map(s => (
-                                <div key={s.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3 text-sm">
-                                    <Moon className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                                    <div className="flex-1">
-                                        <span className="font-semibold">{s.hours}h</span>
+                        <h4 className="font-medium mb-3">Sleep on {format(parseISO(selectedDay), 'EEEE, MMM d')}</h4>
+                        {daySleep.length === 0
+                            ? <p className="text-sm text-muted-foreground italic">No sleep entry on this day.</p>
+                            : daySleep.map(s => (
+                                <div key={s.id} className="flex items-center gap-4 px-3 py-3 rounded-xl hover:bg-white/3 text-sm">
+                                    <Moon className="w-5 h-5 text-blue-400 flex-shrink-0" />
+                                    <div>
+                                        <span className="font-bold text-lg">{s.hours}h</span>
                                         {s.quality && <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${s.quality === 'excellent' ? 'bg-emerald-500/10 text-emerald-400' : s.quality === 'good' ? 'bg-blue-500/10 text-blue-400' : s.quality === 'fair' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}`}>{s.quality}</span>}
                                     </div>
-                                    <span className="text-xs text-muted-foreground">{s.date}</span>
+                                    {s.bed_time && s.wake_time && <span className="text-xs text-muted-foreground">{s.bed_time} → {s.wake_time}</span>}
                                 </div>
-                            ))}
-                            {sleepLogs.length === 0 && <p className="text-sm text-muted-foreground italic">No sleep entries.</p>}
-                        </div>
+                            ))
+                        }
                     </GlassCard>
                 </div>
             )}
 
-            {/* SUPPLEMENTS TAB */}
+            {/* ══════════════ SUPPLEMENTS ══════════════ */}
             {activeTab === 'supplements' && (
                 <div className="space-y-5">
                     <h3 className="font-semibold text-lg">Supplement Stack</h3>
-                    {supplements.length === 0 ? (
-                        <GlassCard animate={false}><p className="text-sm text-muted-foreground italic">No supplements tracked.</p></GlassCard>
-                    ) : (
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {supplements.length === 0
+                        ? <GlassCard animate={false}><p className="text-sm text-muted-foreground italic">No supplements tracked.</p></GlassCard>
+                        : <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {supplements.map(s => (
                                 <GlassCard key={s.id} animate={false} className="border border-white/5">
                                     <div className="flex items-start gap-3">
-                                        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0">
-                                            <Pill className="w-4 h-4 text-emerald-400" />
-                                        </div>
+                                        <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center flex-shrink-0"><Pill className="w-4 h-4 text-emerald-400" /></div>
                                         <div className="flex-1 min-w-0">
                                             <div className="font-semibold text-sm">{s.name}</div>
                                             {s.brand && <div className="text-xs text-muted-foreground">{s.brand}</div>}
                                             <div className="flex gap-2 mt-2 flex-wrap">
                                                 {s.dosage && <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded-full">{s.dosage}</span>}
                                                 {s.timing && <span className="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full">{s.timing.replace('_', ' ')}</span>}
-                                                <span className={`text-[10px] px-2 py-0.5 rounded-full ${s.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-muted-foreground'}`}>
-                                                    {s.is_active ? 'Active' : 'Inactive'}
-                                                </span>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full ${s.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-muted-foreground'}`}>{s.is_active ? 'Active' : 'Inactive'}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </GlassCard>
                             ))}
                         </div>
-                    )}
+                    }
                 </div>
             )}
 
-            {/* BODY PROGRESS TAB */}
+            {/* ══════════════ BODY PROGRESS ══════════════ */}
             {activeTab === 'body_progress' && (
                 <div className="space-y-5">
-                    <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-lg flex items-center gap-2">
-                            <Camera className="w-5 h-5 text-emerald-400" /> Body Progress
-                        </h3>
-                        <span className="text-sm text-muted-foreground">{bodyProgress.length} check-ins</span>
-                    </div>
-                    {bodyProgress.length === 0 ? (
+                    <h3 className="font-semibold text-lg flex items-center gap-2"><Camera className="w-5 h-5 text-emerald-400" /> Body Progress</h3>
+                    {dayProgress.length === 0 ? (
                         <GlassCard animate={false}>
                             <div className="flex flex-col items-center py-12 gap-3 text-center">
                                 <Camera className="w-12 h-12 text-muted-foreground/20" />
-                                <p className="text-muted-foreground">No body progress entries yet.</p>
+                                <p className="text-muted-foreground">No body progress entry on {format(parseISO(selectedDay), 'MMM d, yyyy')}.</p>
+                                <p className="text-xs text-muted-foreground/60">Try a different date using the day picker above.</p>
                             </div>
                         </GlassCard>
                     ) : (
                         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                            {[...bodyProgress].sort((a, b) => b.date.localeCompare(a.date)).map(entry => {
+                            {dayProgress.map(entry => {
                                 const photos = [entry.front_photo_url, entry.side_photo_url, entry.back_photo_url].filter(Boolean);
-                                const moodEmoji = { terrible: '😞', bad: '😕', okay: '😐', good: '😊', amazing: '🤩' };
                                 return (
                                     <GlassCard key={entry.id} animate={false} className="p-0 overflow-hidden border border-white/5">
                                         {photos.length > 0 ? (
                                             <div className="relative grid grid-cols-3 gap-0.5 h-44">
-                                                {photos.map((p, i) => (
-                                                    <div key={i} className="relative overflow-hidden">
-                                                        <img src={p} alt="" className="w-full h-full object-cover" />
-                                                    </div>
-                                                ))}
+                                                {photos.map((p, i) => <div key={i} className="overflow-hidden"><img src={p} alt="" className="w-full h-full object-cover" /></div>)}
                                                 <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/85 via-black/40 to-transparent pointer-events-none" />
                                                 <div className="absolute bottom-0 inset-x-0 p-3">
                                                     <div className="font-semibold text-sm text-white">{format(parseISO(entry.date), 'MMM d, yyyy')}</div>
@@ -690,6 +817,7 @@ export default function AdminUserDetail() {
                                                 <div className="flex gap-3 text-xs text-muted-foreground mt-1">
                                                     {entry.weight_kg && <span>{entry.weight_kg}kg</span>}
                                                     {entry.body_fat_pct && <span>{entry.body_fat_pct}% BF</span>}
+                                                    {entry.mood && <span>Mood: {entry.mood}</span>}
                                                 </div>
                                             </div>
                                         )}
@@ -701,7 +829,7 @@ export default function AdminUserDetail() {
                 </div>
             )}
 
-            {/* PLANS & NOTES TAB */}
+            {/* ══════════════ PLANS & NOTES ══════════════ */}
             {activeTab === 'plans' && (
                 <div className="grid lg:grid-cols-2 gap-5">
                     <GlassCard animate={false}>
@@ -729,7 +857,7 @@ export default function AdminUserDetail() {
                                     <div key={note.id} className="glass rounded-xl p-4 border border-white/5">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${note.category === 'motivation' ? 'bg-emerald-500/10 text-emerald-400' : note.category === 'warning' ? 'bg-yellow-500/10 text-yellow-400' : note.category === 'intervention' ? 'bg-red-500/10 text-red-400' : note.category === 'progress' ? 'bg-blue-500/10 text-blue-400' : 'bg-white/10 text-muted-foreground'}`}>{note.category}</span>
-                                            <span className="text-xs text-muted-foreground">{note.created_date ? format(new Date(note.created_date), 'MMM d') : ''}</span>
+                                            <span className="text-xs text-muted-foreground">{note.created_at ? format(new Date(note.created_at), 'MMM d') : ''}</span>
                                         </div>
                                         <p className="text-sm">{note.note}</p>
                                     </div>
@@ -739,8 +867,12 @@ export default function AdminUserDetail() {
                     </GlassCard>
                 </div>
             )}
+
+
+            {/* ══════════════ TASKS ══════════════ */}
+            {activeTab === 'tasks' && (
+                <UserTasksWidget userEmail={email} showAddTask={true} />
+            )}
         </div>
     );
 }
-
-

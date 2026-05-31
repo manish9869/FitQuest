@@ -1,8 +1,12 @@
-import React, { useState, useEffect } from 'react';
+// ─────────────────────────────────────────────
+// AdminFoodDatabase.jsx
+// ─────────────────────────────────────────────
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { entities } from '@/api/entities';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Search, Pencil, Trash2, Apple, Loader2, X, CheckCircle, Star } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -12,12 +16,13 @@ const CAT_COLORS = {
     grains: 'text-amber-400', beverages: 'text-cyan-400', supplements: 'text-purple-400',
 };
 
+const FOOD_CATS = ['protein', 'carbs', 'fats', 'vegetables', 'fruits', 'dairy', 'grains', 'beverages', 'supplements'];
+
 const EMPTY = { name: '', category: 'protein', calories_per_100g: '', protein_per_100g: '', carbs_per_100g: '', fats_per_100g: '', fiber_per_100g: '', serving_size_g: '', serving_label: '', barcode: '', is_verified: false, is_popular: false };
 
 function FoodDrawer({ open, onClose, food }) {
     const [form, setForm] = useState(EMPTY);
     const qc = useQueryClient();
-
     React.useEffect(() => { setForm(food ? { ...EMPTY, ...food } : EMPTY); }, [food, open]);
     const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -45,10 +50,12 @@ function FoodDrawer({ open, onClose, food }) {
                             <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Food Name *" className="bg-white/5 border-white/10" />
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Category</label>
-                                <select value={form.category} onChange={e => set('category', e.target.value)}
-                                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground">
-                                    {['protein', 'carbs', 'fats', 'vegetables', 'fruits', 'dairy', 'grains', 'beverages', 'supplements'].map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                                <Select value={form.category} onValueChange={v => set('category', v)}>
+                                    <SelectTrigger className="bg-white/5 border-white/10"><SelectValue /></SelectTrigger>
+                                    <SelectContent>
+                                        {FOOD_CATS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
                             </div>
                             <div>
                                 <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Nutrition per 100g</h3>
@@ -125,9 +132,7 @@ export default function AdminFoodDatabase() {
         <div className="space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold font-space flex items-center gap-2">
-                        <Apple className="w-6 h-6 text-green-400" /> Food Database
-                    </h1>
+                    <h1 className="text-2xl font-bold font-space flex items-center gap-2"><Apple className="w-6 h-6 text-green-400" /> Food Database</h1>
                     <p className="text-sm text-muted-foreground mt-1">{foods.length} food items</p>
                 </div>
                 <Button onClick={() => { setEditing(null); setDrawerOpen(true); }} className="bg-green-500 hover:bg-green-600 text-black font-semibold">
@@ -140,13 +145,15 @@ export default function AdminFoodDatabase() {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                     <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search foods..." className="pl-9 bg-white/5 border-white/10" />
                 </div>
-                <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
-                    className="bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-foreground">
-                    <option value="all">All Categories</option>
-                    {['protein', 'carbs', 'fats', 'vegetables', 'fruits', 'dairy', 'grains', 'beverages', 'supplements'].map(c =>
-                        <option key={c} value={c}>{c}</option>
-                    )}
-                </select>
+                <Select value={filterCat} onValueChange={setFilterCat}>
+                    <SelectTrigger className="w-44 bg-white/5 border-white/10">
+                        <SelectValue placeholder="All Categories" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {FOOD_CATS.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                </Select>
             </div>
 
             <div className="glass rounded-xl overflow-hidden">
@@ -200,10 +207,7 @@ export default function AdminFoodDatabase() {
                     </div>
                 )}
             </div>
-
             <FoodDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} food={editing} />
         </div>
     );
 }
-
-

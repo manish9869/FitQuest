@@ -7,6 +7,7 @@ import {
     ChevronRight, X, Sparkles, Layers, ChefHat, Dumbbell, Apple, BookOpen, Star, Database
 } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
+import AdminMessageNotifier from '@/components/admin/AdminMessageNotifier';
 
 const navGroups = [
     {
@@ -128,6 +129,9 @@ export default function AdminLayout() {
             </aside>
 
             <main className="flex-1 min-h-screen overflow-x-clip">
+                {/* ── Admin message notifier — invisible, runs in background ── */}
+                <AdminMessageNotifier />
+
                 <header className="sticky top-0 z-30 px-4 lg:px-8 h-16 flex items-center justify-between"
                     style={{ background: 'hsl(220 20% 3%/0.95)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(139,92,246,0.1)' }}>
                     <div className="flex items-center gap-3">
@@ -145,7 +149,7 @@ export default function AdminLayout() {
                             <span className="text-xs text-muted-foreground">Live</span>
                         </div>
                         <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 font-bold text-xs">
-                            {(user?.full_name || 'A')[0].toUpperCase()}
+                            {(user?.full_name || user?.email || 'A')[0].toUpperCase()}
                         </div>
                     </div>
                 </header>
@@ -154,5 +158,3 @@ export default function AdminLayout() {
         </div>
     );
 }
-
-

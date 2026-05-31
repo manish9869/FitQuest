@@ -148,14 +148,16 @@ a, button, [role="button"], input[type="submit"], input[type="button"], label {
 
 
 
-/* Native select elements — force readable text color */
-select {
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--secondary));
+/* Native select elements — force readable text color in all browsers */
+select,
+select.bg-secondary,
+select[class*="bg-"] {
+  color: hsl(var(--foreground)) !important;
+  background-color: hsl(var(--secondary)) !important;
 }
 select option {
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--card));
+  color: hsl(var(--foreground)) !important;
+  background-color: hsl(var(--card)) !important;
 }
 
 
