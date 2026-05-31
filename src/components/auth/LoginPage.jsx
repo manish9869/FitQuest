@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/api/supabaseClient';
 import AuthVisualPanel from './AuthVisualPanel';
@@ -12,28 +12,20 @@ export default function LoginPage() {
     const [mode, setMode] = useState('login');
     const navigate = useNavigate();
 
-    // Catch Google OAuth redirect
-    useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_IN' && session?.user) {
-                navigate('/dashboard', { replace: true });
-            }
-        });
-        return () => subscription.unsubscribe();
-    }, []);
-
     const handleSubmit = async () => {
         setIsLoading(true);
         setError('');
         try {
-            const { data, error } =
-                mode === 'login'
-                    ? await supabase.auth.signInWithPassword({ email, password })
-                    : await supabase.auth.signUp({ email, password });
+            const { data, error } = mode === 'login'
+                ? await supabase.auth.signInWithPassword({ email, password })
+                : await supabase.auth.signUp({ email, password });
 
-            if (error) {
-                setError(error.message);
-            } else if (data?.user) {
+            if (error) { setError(error.message); return; }
+
+            if (data?.user) {
+                // ✅ Don't check role here — AuthContext hasn't had time to load/apply
+                // it yet (especially for pending admin). Navigate to /dashboard and let
+                // ProtectedRoute redirect to /admin automatically once the role resolves.
                 navigate('/dashboard', { replace: true });
             }
         } catch (e) {
@@ -151,5 +143,3 @@ export default function LoginPage() {
         </div>
     );
 }
-
-

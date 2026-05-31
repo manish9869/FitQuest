@@ -67,6 +67,7 @@ import Payment from '@/pages/Payment';
 import PaymentSuccess from '@/pages/PaymentSuccess';
 import Blog from '@/pages/Blog';
 import BlogPostPage from '@/pages/BlogPost';
+import AdminSetupPage from '@/pages/admin/Adminsetup';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -88,6 +89,7 @@ const AuthenticatedApp = () => {
         {/* Public routes */}
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/admin-setup" element={<AdminSetupPage />} />
         <Route path="/programs" element={<Programs />} />
         <Route path="/payment" element={<Payment />} />
         <Route path="/payment/success" element={<PaymentSuccess />} />

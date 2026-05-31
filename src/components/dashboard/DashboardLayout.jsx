@@ -14,6 +14,7 @@ import { PLAN_CONFIG } from '@/lib/featureFlags';
 
 export default function DashboardLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [confirmLogout, setConfirmLogout] = useState(false);
     const location = useLocation();
     const { user, logout } = useAuth();
 
@@ -142,26 +143,41 @@ export default function DashboardLayout() {
                 </nav>
 
                 {/* Bottom actions */}
-                <div className="p-3 border-t border-white/5">
-                    {user?.role === 'admin' && (
-                        <Link
-                            to="/admin"
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium
-                text-purple-400 hover:bg-purple-500/10 transition-all mb-1"
+                <AnimatePresence mode="wait">
+                    {!confirmLogout ? (
+                        <motion.button
+                            key="logout-btn"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            onClick={() => setConfirmLogout(true)}
+                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/5 transition-all"
                         >
-                            <Shield className="w-4 h-4" />
-                            Admin Panel
-                        </Link>
+                            <LogOut className="w-4 h-4" />
+                            <span>Sign Out</span>
+                        </motion.button>
+                    ) : (
+                        <motion.div
+                            key="logout-confirm"
+                            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+                            className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 space-y-2"
+                        >
+                            <p className="text-xs text-red-400 font-medium text-center">Sign out of admin?</p>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => setConfirmLogout(false)}
+                                    className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-muted-foreground transition-all"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={logout}
+                                    className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all"
+                                >
+                                    Sign Out
+                                </button>
+                            </div>
+                        </motion.div>
                     )}
-                    <button
-                        onClick={logout}
-                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium
-              text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-all w-full"
-                    >
-                        <LogOut className="w-4 h-4" />
-                        Logout
-                    </button>
-                </div>
+                </AnimatePresence>
             </aside>
 
             {/* Main content */}
