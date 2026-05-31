@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { supabase } from '@/api/supabaseClient';
 import AuthVisualPanel from './AuthVisualPanel';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '@/lib/AuthContext';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -11,24 +12,35 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [mode, setMode] = useState('login');
     const navigate = useNavigate();
+    const location = useLocation();
+    const { refreshRole } = useAuth();
 
     const handleSubmit = async () => {
         setIsLoading(true);
         setError('');
         try {
-            const { data, error } = mode === 'login'
+            const { data, error: authError } = mode === 'login'
                 ? await supabase.auth.signInWithPassword({ email, password })
                 : await supabase.auth.signUp({ email, password });
 
-            if (error) { setError(error.message); return; }
+            if (authError) {
+                setError(authError.message);
+                return;
+            }
 
             if (data?.user) {
-                // ✅ Don't check role here — AuthContext hasn't had time to load/apply
-                // it yet (especially for pending admin). Navigate to /dashboard and let
-                // ProtectedRoute redirect to /admin automatically once the role resolves.
-                navigate('/dashboard', { replace: true });
+                // Fetch the role immediately so we can redirect to the right place
+                const role = await refreshRole(data.user.email);
+
+                if (role === 'admin') {
+                    navigate('/admin', { replace: true });
+                } else {
+                    // Redirect back to the page they came from, or dashboard
+                    const from = location.state?.from?.pathname || '/dashboard';
+                    navigate(from, { replace: true });
+                }
             }
-        } catch (e) {
+        } catch {
             setError('Something went wrong. Please try again.');
         } finally {
             setIsLoading(false);
