@@ -2,72 +2,124 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Zap, Plus, Check, Trash2, Clock, AlertTriangle, User, Dumbbell, MessageSquare, Eye, Star } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Zap, Plus, Check, Trash2, Clock, AlertTriangle, User, Dumbbell, MessageSquare, Eye, Loader2, Users } from 'lucide-react';
 import { toast } from 'sonner';
+import { entities } from '@/api/entities';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 const TASK_ICONS = { followup: User, review: Eye, plan: Dumbbell, message: MessageSquare, urgent: AlertTriangle };
 const TASK_COLORS = { high: 'border-red-500/30 bg-red-500/5', medium: 'border-yellow-500/30 bg-yellow-500/5', low: 'border-white/10 bg-white/2' };
 const PRIORITY_BADGE = { high: 'text-red-400 bg-red-500/10', medium: 'text-yellow-400 bg-yellow-500/10', low: 'text-muted-foreground bg-white/5' };
 
-const INITIAL_TASKS = {
-    todo: [
-        { id: 1, title: 'Follow up with Sarah K.', desc: '5 days inactive — needs intervention', priority: 'high', type: 'followup', due: 'Today', user: 'Sarah K.' },
-        { id: 2, title: 'Review Mike\'s progress photos', desc: 'Submitted 3 days ago, pending review', priority: 'medium', type: 'review', due: 'Today', user: 'Mike R.' },
-        { id: 3, title: 'Update John\'s workout plan', desc: 'Week 4 progression ready', priority: 'medium', type: 'plan', due: 'Tomorrow', user: 'John D.' },
-        { id: 4, title: 'Send hydration reminders', desc: 'Water tracking down 6% this week', priority: 'low', type: 'message', due: 'This week', user: 'All Users' },
-    ],
-    in_progress: [
-        { id: 5, title: 'Create monthly progress reports', desc: 'Due by end of week', priority: 'medium', type: 'review', due: 'Friday', user: 'All Clients' },
-        { id: 6, title: 'Respond to nutrition questions', desc: '3 unanswered queries in chat', priority: 'high', type: 'message', due: 'Today', user: 'Multiple' },
-    ],
-    done: [
-        { id: 7, title: 'Assigned new training plan to Priya', desc: 'Completed', priority: 'low', type: 'plan', due: 'Done', user: 'Priya S.' },
-        { id: 8, title: 'Sent weekly check-in messages', desc: 'Sent to 12 clients', priority: 'low', type: 'message', due: 'Done', user: 'All Users' },
-    ],
-};
+const COLUMNS = [
+    { key: 'todo', label: 'To Do', color: 'text-red-400', bg: 'bg-red-500/10' },
+    { key: 'in_progress', label: 'In Progress', color: 'text-yellow-400', bg: 'bg-yellow-500/10' },
+    { key: 'done', label: 'Done', color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+];
 
 export default function AdminTasks() {
-    const [tasks, setTasks] = useState(INITIAL_TASKS);
-    const [newTask, setNewTask] = useState('');
-    const [dragId, setDragId] = useState(null);
+    const qc = useQueryClient();
 
-    const total = Object.values(tasks).flat().length;
-    const done = tasks.done.length;
+    // Form state
+    const [newTask, setNewTask] = useState('');
+    const [newPriority, setNewPriority] = useState('medium');
+    const [newType, setNewType] = useState('followup');
+    const [newDue, setNewDue] = useState('This week');
+    const [isUserSpecific, setIsUserSpecific] = useState(false);
+    const [selectedUserEmail, setSelectedUserEmail] = useState('');
+    const [adding, setAdding] = useState(false);
+    const [movingId, setMovingId] = useState(null);
+    const [deletingId, setDeletingId] = useState(null);
+
+    const { data: allTasks = [], isLoading } = useQuery({
+        queryKey: ['admin-tasks'],
+        queryFn: () => entities.AdminTask.list('sort_order'),
+    });
+
+    const { data: allProfiles = [] } = useQuery({
+        queryKey: ['all-profiles'],
+        queryFn: () => entities.UserProfile.list(),
+    });
+
+    const tasksByStatus = {
+        todo: allTasks.filter(t => t.status === 'todo'),
+        in_progress: allTasks.filter(t => t.status === 'in_progress'),
+        done: allTasks.filter(t => t.status === 'done'),
+    };
+
+    const total = allTasks.length;
+    const done = tasksByStatus.done.length;
     const progress = total > 0 ? Math.round((done / total) * 100) : 0;
 
-    const moveTask = (id, from, to) => {
-        const task = tasks[from].find(t => t.id === id);
-        if (!task) return;
-        setTasks(prev => ({
-            ...prev,
-            [from]: prev[from].filter(t => t.id !== id),
-            [to]: [...prev[to], task],
-        }));
-        toast.success(`Moved to ${to.replace('_', ' ')}`);
+    const moveTask = async (id, to) => {
+        setMovingId(id);
+        try {
+            await entities.AdminTask.update(id, { status: to });
+            qc.invalidateQueries({ queryKey: ['admin-tasks'] });
+            toast.success(`Moved to ${to.replace('_', ' ')}`);
+        } catch {
+            toast.error('Failed to move task');
+        } finally {
+            setMovingId(null);
+        }
     };
 
-    const deleteTask = (id, col) => {
-        setTasks(prev => ({ ...prev, [col]: prev[col].filter(t => t.id !== id) }));
+    const deleteTask = async (id) => {
+        setDeletingId(id);
+        try {
+            await entities.AdminTask.delete(id);
+            qc.invalidateQueries({ queryKey: ['admin-tasks'] });
+            toast.success('Task deleted');
+        } catch {
+            toast.error('Failed to delete task');
+        } finally {
+            setDeletingId(null);
+        }
     };
 
-    const addTask = () => {
+    const addTask = async () => {
         if (!newTask.trim()) return;
-        const task = { id: Date.now(), title: newTask, desc: '', priority: 'medium', type: 'followup', due: 'This week', user: '' };
-        setTasks(prev => ({ ...prev, todo: [task, ...prev.todo] }));
-        setNewTask('');
+        if (isUserSpecific && !selectedUserEmail) {
+            toast.error('Please select a user');
+            return;
+        }
+        setAdding(true);
+        try {
+            await entities.AdminTask.create({
+                title: newTask.trim(),
+                description: '',
+                priority: newPriority,
+                type: newType,
+                status: 'todo',
+                due: newDue,
+                is_user_specific: isUserSpecific,
+                user_email: isUserSpecific ? selectedUserEmail : null,
+                sort_order: Date.now(),
+            });
+            qc.invalidateQueries({ queryKey: ['admin-tasks'] });
+            setNewTask('');
+            setSelectedUserEmail('');
+            setIsUserSpecific(false);
+            setNewDue('This week');
+            setNewPriority('medium');
+            setNewType('followup');
+            toast.success('Task added');
+        } catch {
+            toast.error('Failed to add task');
+        } finally {
+            setAdding(false);
+        }
     };
-
-    const COLUMNS = [
-        { key: 'todo', label: 'To Do', color: 'text-red-400', bg: 'bg-red-500/10', count: tasks.todo.length },
-        { key: 'in_progress', label: 'In Progress', color: 'text-yellow-400', bg: 'bg-yellow-500/10', count: tasks.in_progress.length },
-        { key: 'done', label: 'Done', color: 'text-emerald-400', bg: 'bg-emerald-500/10', count: tasks.done.length },
-    ];
 
     return (
         <div className="space-y-6">
+            {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                    <h1 className="text-2xl font-space font-bold flex items-center gap-2"><Zap className="w-7 h-7 text-yellow-400" /> Coach Task Board</h1>
+                    <h1 className="text-2xl font-space font-bold flex items-center gap-2">
+                        <Zap className="w-7 h-7 text-yellow-400" /> Coach Task Board
+                    </h1>
                     <p className="text-sm text-muted-foreground mt-1">Trainer workflow management</p>
                 </div>
                 <div className="flex items-center gap-3">
@@ -85,61 +137,210 @@ export default function AdminTasks() {
                 </div>
             </div>
 
-            {/* Add Task */}
-            <div className="flex gap-2">
-                <Input value={newTask} onChange={e => setNewTask(e.target.value)} placeholder="Add a new task..."
-                    className="bg-white/5 border-white/10 flex-1" onKeyDown={e => e.key === 'Enter' && addTask()} />
-                <Button onClick={addTask} className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold">
-                    <Plus className="w-4 h-4 mr-1" /> Add
-                </Button>
+            {/* Add Task Form */}
+            <div className="glass rounded-2xl p-4 border border-white/5 space-y-3">
+                <h3 className="text-sm font-semibold text-muted-foreground">Add New Task</h3>
+
+                <Input
+                    value={newTask}
+                    onChange={e => setNewTask(e.target.value)}
+                    placeholder="Task title..."
+                    className="bg-white/5 border-white/10"
+                    onKeyDown={e => e.key === 'Enter' && addTask()}
+                />
+
+                {/* User specific toggle */}
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => { setIsUserSpecific(false); setSelectedUserEmail(''); }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all border ${!isUserSpecific ? 'border-yellow-500/40 bg-yellow-500/10 text-yellow-400' : 'border-white/10 bg-white/5 text-muted-foreground'}`}
+                    >
+                        <Zap className="w-3.5 h-3.5" /> General Task
+                    </button>
+                    <button
+                        onClick={() => setIsUserSpecific(true)}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-all border ${isUserSpecific ? 'border-blue-500/40 bg-blue-500/10 text-blue-400' : 'border-white/10 bg-white/5 text-muted-foreground'}`}
+                    >
+                        <User className="w-3.5 h-3.5" /> User Specific
+                    </button>
+                </div>
+
+                {/* User dropdown — only shown when user specific */}
+                <AnimatePresence>
+                    {isUserSpecific && (
+                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
+                            <Select value={selectedUserEmail} onValueChange={setSelectedUserEmail}>
+                                <SelectTrigger className="bg-white/5 border-white/10 w-full">
+                                    <SelectValue placeholder="Select user..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {allProfiles.map(p => (
+                                        <SelectItem key={p.user_email} value={p.user_email}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[10px] text-blue-400 font-bold">
+                                                    {p.user_email?.[0]?.toUpperCase()}
+                                                </div>
+                                                {p.user_email?.split('@')[0]}
+                                                <span className="text-xs text-muted-foreground">{p.user_email}</span>
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <div className="flex gap-2 flex-wrap">
+                    <Select value={newPriority} onValueChange={setNewPriority}>
+                        <SelectTrigger className="bg-white/5 border-white/10 w-32">
+                            <SelectValue placeholder="Priority" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="high">🔴 High</SelectItem>
+                            <SelectItem value="medium">🟡 Medium</SelectItem>
+                            <SelectItem value="low">⚪ Low</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={newType} onValueChange={setNewType}>
+                        <SelectTrigger className="bg-white/5 border-white/10 w-36">
+                            <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="followup">👤 Follow Up</SelectItem>
+                            <SelectItem value="review">👁 Review</SelectItem>
+                            <SelectItem value="plan">🏋️ Plan</SelectItem>
+                            <SelectItem value="message">💬 Message</SelectItem>
+                            <SelectItem value="urgent">⚠️ Urgent</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Select value={newDue} onValueChange={setNewDue}>
+                        <SelectTrigger className="bg-white/5 border-white/10 w-36">
+                            <SelectValue placeholder="Due" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="Today">Today</SelectItem>
+                            <SelectItem value="Tomorrow">Tomorrow</SelectItem>
+                            <SelectItem value="This week">This week</SelectItem>
+                            <SelectItem value="Next week">Next week</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <Button
+                        onClick={addTask}
+                        disabled={adding || !newTask.trim()}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-black font-semibold ml-auto"
+                    >
+                        {adding ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : <Plus className="w-4 h-4 mr-1" />}
+                        Add Task
+                    </Button>
+                </div>
             </div>
 
-            {/* Kanban */}
-            <div className="grid lg:grid-cols-3 gap-5">
-                {COLUMNS.map(col => (
-                    <div key={col.key}>
-                        <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                                <span className={`w-6 h-6 rounded-full ${col.bg} ${col.color} flex items-center justify-center text-xs font-bold`}>{col.count}</span>
+            {/* Kanban Board */}
+            {isLoading ? (
+                <div className="grid lg:grid-cols-3 gap-5">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="space-y-3">
+                            {[1, 2].map(j => <div key={j} className="h-28 glass rounded-xl animate-pulse border border-white/5" />)}
+                        </div>
+                    ))}
+                </div>
+            ) : (
+                <div className="grid lg:grid-cols-3 gap-5">
+                    {COLUMNS.map(col => (
+                        <div key={col.key}>
+                            <div className="flex items-center gap-2 mb-3">
+                                <span className={`w-6 h-6 rounded-full ${col.bg} ${col.color} flex items-center justify-center text-xs font-bold`}>
+                                    {tasksByStatus[col.key].length}
+                                </span>
                                 <h3 className="font-semibold text-sm">{col.label}</h3>
                             </div>
-                        </div>
-                        <div className="space-y-3 min-h-32">
-                            <AnimatePresence>
-                                {tasks[col.key].map((task, i) => {
-                                    const Icon = TASK_ICONS[task.type] || Zap;
-                                    return (
-                                        <motion.div key={task.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} transition={{ delay: i * 0.05 }}>
-                                            <div className={`glass rounded-xl p-4 border ${TASK_COLORS[task.priority]} hover:border-white/15 transition-all group`}>
-                                                <div className="flex items-start justify-between mb-2">
-                                                    <div className="flex items-center gap-2 flex-1">
-                                                        <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                                                        <span className="text-sm font-medium line-clamp-1">{task.title}</span>
+                            <div className="space-y-3 min-h-32">
+                                <AnimatePresence>
+                                    {tasksByStatus[col.key].length === 0 && (
+                                        <div className="h-24 rounded-xl border border-dashed border-white/10 flex items-center justify-center">
+                                            <span className="text-xs text-muted-foreground/50">No tasks</span>
+                                        </div>
+                                    )}
+                                    {tasksByStatus[col.key].map((task, i) => {
+                                        const Icon = TASK_ICONS[task.type] || Zap;
+                                        const isMoving = movingId === task.id;
+                                        const isDeleting = deletingId === task.id;
+                                        return (
+                                            <motion.div
+                                                key={task.id}
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: isMoving || isDeleting ? 0.5 : 1, y: 0 }}
+                                                exit={{ opacity: 0, scale: 0.95 }}
+                                                transition={{ delay: i * 0.05 }}
+                                            >
+                                                <div className={`glass rounded-xl p-4 border ${TASK_COLORS[task.priority]} hover:border-white/15 transition-all group`}>
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <div className="flex items-center gap-2 flex-1">
+                                                            <Icon className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                                                            <span className="text-sm font-medium line-clamp-1">{task.title}</span>
+                                                        </div>
+                                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ml-1 ${PRIORITY_BADGE[task.priority]}`}>
+                                                            {task.priority}
+                                                        </span>
                                                     </div>
-                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold flex-shrink-0 ml-1 ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span>
+
+                                                    {task.description && (
+                                                        <p className="text-xs text-muted-foreground mb-2 ml-6">{task.description}</p>
+                                                    )}
+
+                                                    <div className="flex items-center gap-2 ml-6 flex-wrap">
+                                                        {/* User badge */}
+                                                        {task.is_user_specific && task.user_email && (
+                                                            <span className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                <User className="w-2.5 h-2.5" />
+                                                                {task.user_email.split('@')[0]}
+                                                            </span>
+                                                        )}
+                                                        {!task.is_user_specific && (
+                                                            <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                                                <Users className="w-2.5 h-2.5" /> General
+                                                            </span>
+                                                        )}
+                                                        <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                                                            <Clock className="w-2.5 h-2.5" />{task.due}
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity flex-wrap">
+                                                        {col.key !== 'todo' && (
+                                                            <button onClick={() => moveTask(task.id, 'todo')} disabled={isMoving}
+                                                                className="text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-muted-foreground transition-all">
+                                                                ← To Do
+                                                            </button>
+                                                        )}
+                                                        {col.key !== 'in_progress' && (
+                                                            <button onClick={() => moveTask(task.id, 'in_progress')} disabled={isMoving}
+                                                                className="text-[10px] px-2 py-1 rounded bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-all">
+                                                                In Progress
+                                                            </button>
+                                                        )}
+                                                        {col.key !== 'done' && (
+                                                            <button onClick={() => moveTask(task.id, 'done')} disabled={isMoving}
+                                                                className="text-[10px] px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all">
+                                                                <Check className="w-3 h-3 inline" /> Done
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => deleteTask(task.id)} disabled={isDeleting}
+                                                            className="text-[10px] px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all ml-auto">
+                                                            {isDeleting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                                {task.desc && <p className="text-xs text-muted-foreground mb-2 ml-6">{task.desc}</p>}
-                                                <div className="flex items-center gap-2 ml-6">
-                                                    {task.user && <span className="text-[10px] text-muted-foreground bg-white/5 px-2 py-0.5 rounded-full">{task.user}</span>}
-                                                    <span className="text-[10px] text-muted-foreground flex items-center gap-1"><Clock className="w-2.5 h-2.5" />{task.due}</span>
-                                                </div>
-                                                <div className="flex gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    {col.key !== 'todo' && <button onClick={() => moveTask(task.id, col.key, 'todo')} className="text-[10px] px-2 py-1 rounded bg-white/5 hover:bg-white/10 text-muted-foreground transition-all">← To Do</button>}
-                                                    {col.key !== 'in_progress' && <button onClick={() => moveTask(task.id, col.key, 'in_progress')} className="text-[10px] px-2 py-1 rounded bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 transition-all">In Progress</button>}
-                                                    {col.key !== 'done' && <button onClick={() => moveTask(task.id, col.key, 'done')} className="text-[10px] px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 transition-all"><Check className="w-3 h-3 inline" /> Done</button>}
-                                                    <button onClick={() => deleteTask(task.id, col.key)} className="text-[10px] px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-all ml-auto"><Trash2 className="w-3 h-3" /></button>
-                                                </div>
-                                            </div>
-                                        </motion.div>
-                                    );
-                                })}
-                            </AnimatePresence>
+                                            </motion.div>
+                                        );
+                                    })}
+                                </AnimatePresence>
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
-
-

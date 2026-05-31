@@ -19,8 +19,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import {
     ArrowLeft, User, Target, FileText, MessageSquare, Loader2,
     Scale, Moon, Dumbbell, Pill, Activity, Trophy, Utensils,
-    Camera, CalendarRange, ChevronLeft, ChevronRight
+    Camera, CalendarRange, ChevronLeft, ChevronRight, Zap
 } from 'lucide-react';
+import UserTasksWidget from '@/pages/admin/UserTasksWidget';
 import { toast } from 'sonner';
 
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
@@ -292,7 +293,7 @@ export default function AdminUserDetail() {
         { id: 'sleep', label: 'Sleep', icon: Moon },
         { id: 'supplements', label: 'Supplements', icon: Pill },
         { id: 'plans', label: 'Plans & Notes', icon: FileText },
-        { id: 'body_progress', label: 'Body Progress', icon: Camera },
+        { id: 'body_progress', label: 'Body Progress', icon: Camera }, { id: 'tasks', label: 'Tasks', icon: Zap },
     ];
 
     // Tabs that use the day picker for log tables
@@ -865,6 +866,12 @@ export default function AdminUserDetail() {
                         )}
                     </GlassCard>
                 </div>
+            )}
+
+
+            {/* ══════════════ TASKS ══════════════ */}
+            {activeTab === 'tasks' && (
+                <UserTasksWidget userEmail={email} showAddTask={true} />
             )}
         </div>
     );

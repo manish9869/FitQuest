@@ -29,7 +29,8 @@ const TABLE_MAP = {
     WorkoutPlan: 'workout_plans',
     WorkoutTemplate: 'workout_templates',
     Automation: 'automations',
-    Challenge: 'challenges'
+    Challenge: 'challenges',
+    AdminTask: 'admin_tasks',
 };
 
 // ── Generic entity factory ────────────────────────────────────────────────────

@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useFeatureFlags } from '@/lib/FeatureFlagContext';
 import { PLAN_CONFIG } from '@/lib/featureFlags';
 
+
 export default function DashboardLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const location = useLocation();
