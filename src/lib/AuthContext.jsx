@@ -149,8 +149,9 @@ export const AuthProvider = ({ children }) => {
         setAuthChecked(true);
         setIsLoadingAuth(false);
         clearLocalStorage();
-        await supabase.auth.signOut();
         window.location.href = '/';
+        await supabase.auth.signOut();
+
     };
 
     return (
