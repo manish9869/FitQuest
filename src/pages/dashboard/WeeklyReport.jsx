@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { format, subDays, startOfWeek } from 'date-fns';
 import { Flame, Droplets, Footprints, Dumbbell, TrendingUp, Star, Trophy, ChevronRight, ChevronLeft, Zap, Target } from 'lucide-react';
 import { BarChart, Bar, XAxis, ResponsiveContainer, Tooltip } from 'recharts';
+import PDFReportGenerator from '@/components/reports/PDFReportGenerator';
 
 const SLIDES = ['hero', 'workouts', 'nutrition', 'steps', 'summary'];
 
@@ -186,10 +187,11 @@ export default function WeeklyReport() {
 
     return (
         <div className="max-w-lg mx-auto">
-            <div className="mb-4">
+            <div className="mb-4 flex items-center justify-between gap-3 flex-wrap">
                 <h1 className="text-2xl font-space font-bold flex items-center gap-2">
                     <TrendingUp className="w-7 h-7 text-emerald-400" /> Weekly Report
                 </h1>
+                {user?.email && <PDFReportGenerator userEmail={user.email} buttonLabel="Download PDF Report" />}
             </div>
 
             {/* Story-style Card */}
@@ -236,5 +238,3 @@ export default function WeeklyReport() {
         </div>
     );
 }
-
-

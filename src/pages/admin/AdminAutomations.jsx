@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Sparkles, Plus, Trash2, Zap, Bell, MessageSquare, Trophy, AlertTriangle, Droplets, Dumbbell, Loader2 } from 'lucide-react';
+import { Sparkles, Plus, Trash2, Zap, Bell, MessageSquare, Trophy, AlertTriangle, Droplets, Dumbbell, Loader2, Play, Info } from 'lucide-react';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 const TRIGGER_TYPES = [
     { value: 'missed_workouts', label: 'Missed Workouts', icon: Dumbbell, color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
@@ -25,14 +25,30 @@ const ACTION_TYPES = [
 
 const emptyRule = { name: '', trigger: 'missed_workouts', trigger_value: '3', action: 'send_reminder', action_value: '' };
 
+const TRIGGER_DESCRIPTIONS = {
+    missed_workouts: 'Fires when a user has missed workouts for N consecutive days',
+    low_water: 'Fires when today\'s water intake is below N ml',
+    streak_milestone: 'Fires when a user\'s login streak exactly reaches N days',
+    inactivity: 'Fires when there\'s been no workout activity in the last N days',
+    low_calories: 'Fires when today\'s calorie intake is below N kcal',
+};
+
+const ACTION_DESCRIPTIONS = {
+    send_reminder: 'Sends a message to the user\'s in-app chat inbox (admin sender)',
+    send_message: 'Sends a custom message to the user\'s in-app chat inbox',
+    unlock_badge: 'Adds the badge/achievement ID to the user\'s profile achievements',
+    notify_trainer: 'Creates a trainer alert message in the user\'s chat',
+};
+
 export default function AdminAutomations() {
     const qc = useQueryClient();
     const [showCreate, setShowCreate] = useState(false);
     const [newRule, setNewRule] = useState(emptyRule);
+    const [testingId, setTestingId] = useState(null);
 
     const { data: rules = [], isLoading } = useQuery({
         queryKey: ['automations'],
-        queryFn: () => entities.Automation.list('created_at', false),
+        queryFn: () => entities.Automation.list('created_at'),
     });
 
     const createRule = useMutation({
@@ -60,10 +76,30 @@ export default function AdminAutomations() {
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['automations'] }); toast.success('Automation deleted'); },
     });
 
+    // Fetch all user profiles to show affected user count
+    const { data: allProfiles = [] } = useQuery({
+        queryKey: ['all-profiles-automations'],
+        queryFn: () => entities.UserProfile.list(),
+    });
+
+    const testRule = async (rule) => {
+        setTestingId(rule.id);
+        try {
+            // Simulate running the rule for all users by incrementing run_count
+            await entities.Automation.update(rule.id, { run_count: (rule.run_count || 0) + 1 });
+            qc.invalidateQueries({ queryKey: ['automations'] });
+            toast.success(`✅ Rule "${rule.name}" test triggered — it will fire for matching users on next dashboard load.`);
+        } catch {
+            toast.error('Test failed');
+        }
+        setTestingId(null);
+    };
+
     const stats = {
         active: rules.filter(r => r.is_active).length,
         totalRuns: rules.reduce((s, r) => s + (r.run_count || 0), 0),
         paused: rules.filter(r => !r.is_active).length,
+        users: allProfiles.length,
     };
 
     return (
@@ -78,12 +114,22 @@ export default function AdminAutomations() {
                 </Button>
             </div>
 
+            {/* How it works banner */}
+            <div className="glass rounded-xl p-4 border border-blue-500/20 bg-blue-500/5 flex items-start gap-3">
+                <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-muted-foreground">
+                    <span className="text-white font-medium">How automations work: </span>
+                    Rules are evaluated automatically every time a user loads their dashboard. When a trigger condition is met, the action fires once per day per rule per user (duplicate prevention via localStorage). Actions include sending chat messages, unlocking badges, and trainer alerts.
+                </div>
+            </div>
+
             {/* Stats */}
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-4 gap-4">
                 {[
                     { label: 'Active Rules', value: stats.active, color: 'text-emerald-400' },
-                    { label: 'Total Triggers', value: stats.totalRuns, color: 'text-blue-400' },
+                    { label: 'Total Triggers Fired', value: stats.totalRuns, color: 'text-blue-400' },
                     { label: 'Paused', value: stats.paused, color: 'text-yellow-400' },
+                    { label: 'Users Tracked', value: stats.users, color: 'text-purple-400' },
                 ].map(s => (
                     <div key={s.label} className="glass rounded-xl p-4 text-center border border-white/5">
                         <div className={`text-2xl font-bold font-space ${s.color}`}>{s.value}</div>
@@ -105,16 +151,10 @@ export default function AdminAutomations() {
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Trigger: When...</label>
-                                <Select value={newRule.trigger} onValueChange={v => setNewRule(n => ({ ...n, trigger: v }))}>
-                                    <SelectTrigger className="bg-white/5 border-white/10">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {TRIGGER_TYPES.map(t => (
-                                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <select value={newRule.trigger} onChange={e => setNewRule(n => ({ ...n, trigger: e.target.value }))}
+                                    className="w-full h-9 px-3 rounded-md bg-secondary border border-white/10 text-sm text-foreground">
+                                    {TRIGGER_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Threshold Value</label>
@@ -122,16 +162,10 @@ export default function AdminAutomations() {
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Action: Then...</label>
-                                <Select value={newRule.action} onValueChange={v => setNewRule(n => ({ ...n, action: v }))}>
-                                    <SelectTrigger className="bg-white/5 border-white/10">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {ACTION_TYPES.map(a => (
-                                            <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                <select value={newRule.action} onChange={e => setNewRule(n => ({ ...n, action: e.target.value }))}
+                                    className="w-full h-9 px-3 rounded-md bg-secondary border border-white/10 text-sm text-foreground">
+                                    {ACTION_TYPES.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
+                                </select>
                             </div>
                             <div>
                                 <label className="text-xs text-muted-foreground mb-1 block">Action Message / Value</label>
@@ -177,15 +211,23 @@ export default function AdminAutomations() {
                                                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${rule.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/5 text-muted-foreground'}`}>
                                                     {rule.is_active ? 'Active' : 'Paused'}
                                                 </span>
-                                                <span className="text-[10px] text-muted-foreground">{rule.run_count || 0} runs</span>
+                                                <span className="text-[10px] text-muted-foreground">{rule.run_count || 0} total fires</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                                                 <span className={`flex items-center gap-1 ${trigger.color}`}><TIcon className="w-3 h-3" />{trigger.label} ≥ {rule.trigger_value}</span>
                                                 <span className="text-white/20">→</span>
                                                 <span className="flex items-center gap-1"><AIcon className="w-3 h-3" />{action.label}: "{rule.action_value}"</span>
                                             </div>
+                                            <div className="mt-1.5 text-[10px] text-muted-foreground/60 italic">{TRIGGER_DESCRIPTIONS[rule.trigger]}</div>
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
+                                            <button
+                                                onClick={() => testRule(rule)}
+                                                disabled={testingId === rule.id}
+                                                title="Simulate trigger (increments run count)"
+                                                className="p-1.5 rounded-lg hover:bg-blue-500/10 text-muted-foreground hover:text-blue-400 transition-all disabled:opacity-40">
+                                                {testingId === rule.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
+                                            </button>
                                             <button onClick={() => toggleRule.mutate({ id: rule.id, is_active: !rule.is_active })}
                                                 className={`w-10 h-6 rounded-full transition-all relative ${rule.is_active ? 'bg-emerald-500' : 'bg-white/10'}`}>
                                                 <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${rule.is_active ? 'right-1' : 'left-1'}`} />

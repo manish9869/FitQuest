@@ -1,785 +1,354 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { entities } from '@/api/entities';
 import { useQuery } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
-import { Button } from '@/components/ui/button';
-import { format, subDays, parseISO, eachDayOfInterval, startOfWeek, endOfWeek } from 'date-fns';
 import {
-    Brain, Loader2, TrendingUp, TrendingDown, AlertTriangle, Target,
-    Droplets, Dumbbell, Utensils, Zap, RefreshCw, Star, Flame,
-    Users, Activity, Moon, Scale, CalendarRange, ChevronDown
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { invokeLLM } from '@/api/llm';
-import {
-    AreaChart, Area, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
-    XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend
+    PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+    Tooltip, ResponsiveContainer, LineChart, Line, AreaChart, Area
 } from 'recharts';
+import GlassCard from '@/components/ui/GlassCard';
+import { BarChart3, Users, TrendingUp, Activity, Target, Flame, Droplets, Dumbbell, Moon, Zap, Calendar } from 'lucide-react';
+import { goalLabels, activityLabels } from '@/lib/fitnessUtils';
+import { format, subDays } from 'date-fns';
 
-// ── Tooltip ───────────────────────────────────────────────────────────────────
-const ChartTooltip = ({ active, payload, label }) => {
+const COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f97316', '#ef4444', '#06b6d4', '#f59e0b'];
+
+const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
-        <div className="glass rounded-lg p-2.5 text-xs border border-white/10 shadow-xl">
-            <p className="font-semibold mb-1 text-muted-foreground">{label}</p>
-            {payload.map(p => (
-                <p key={p.name} style={{ color: p.color }}>
-                    {p.name}: <span className="font-bold">{p.value?.toLocaleString()}</span>
-                </p>
-            ))}
+        <div className="glass rounded-lg p-3 text-xs border border-white/10">
+            {label && <p className="font-semibold mb-1 text-muted-foreground">{label}</p>}
+            {payload.map(p => <p key={p.name} style={{ color: p.color || '#fff' }}>{p.name}: {p.value?.toLocaleString()}</p>)}
         </div>
     );
 };
 
-const StatCard = ({ label, value, sub, color = 'text-white', icon: Icon, trend, trendLabel }) => (
-    <div className="glass rounded-2xl p-4 border border-white/5">
-        <div className="flex items-start justify-between mb-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color === 'text-emerald-400' ? 'bg-emerald-500/10' : color === 'text-blue-400' ? 'bg-blue-500/10' : color === 'text-orange-400' ? 'bg-orange-500/10' : color === 'text-purple-400' ? 'bg-purple-500/10' : color === 'text-cyan-400' ? 'bg-cyan-500/10' : color === 'text-yellow-400' ? 'bg-yellow-500/10' : color === 'text-red-400' ? 'bg-red-500/10' : 'bg-white/5'}`}>
-                {Icon && <Icon className={`w-4 h-4 ${color}`} />}
+const KPICard = ({ icon: Icon, label, value, sub, color = 'text-white', iconColor = 'text-emerald-400' }) => (
+    <div className="glass rounded-xl p-4 border border-white/5">
+        <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+                <Icon className={`w-4 h-4 ${iconColor}`} />
             </div>
-            {trend !== undefined && (
-                <div className={`flex items-center gap-0.5 text-[10px] font-semibold ${trend >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {trend >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {Math.abs(trend)}%
-                </div>
-            )}
+            <span className="text-xs text-muted-foreground">{label}</span>
         </div>
         <div className={`text-2xl font-bold font-space ${color}`}>{value}</div>
-        <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
-        {sub && <div className="text-[10px] text-muted-foreground/50 mt-0.5">{sub}</div>}
-        {trendLabel && <div className="text-[10px] text-muted-foreground/60 mt-1">{trendLabel}</div>}
+        {sub && <div className="text-[11px] text-muted-foreground mt-1">{sub}</div>}
     </div>
 );
 
-const PRIORITY_CONFIG = {
-    critical: { label: 'Critical', color: 'text-red-400 bg-red-500/10 border-red-500/20' },
-    high: { label: 'High Priority', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20' },
-    medium: { label: 'Medium', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
-    positive: { label: 'Positive', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
-};
+export default function AdminAnalytics() {
+    const [range, setRange] = useState(30);
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
+    const [useCustom, setUseCustom] = useState(false);
 
-const RANGE_PRESETS = [
-    { label: '7d', days: 7 },
-    { label: '14d', days: 14 },
-    { label: '30d', days: 30 },
-    { label: '90d', days: 90 },
-];
+    const { data: profiles = [] } = useQuery({ queryKey: ['admin-profiles'], queryFn: () => entities.UserProfile.list() });
+    const { data: workoutLogs = [] } = useQuery({ queryKey: ['admin-all-workouts'], queryFn: () => entities.WorkoutLog.list('-date', 500) });
+    const { data: mealLogs = [] } = useQuery({ queryKey: ['admin-all-meals'], queryFn: () => entities.MealLog.list('-date', 500) });
+    const { data: waterLogs = [] } = useQuery({ queryKey: ['admin-all-water'], queryFn: () => entities.WaterLog.list('-date', 500) });
+    const { data: stepLogs = [] } = useQuery({ queryKey: ['admin-all-steps'], queryFn: () => entities.StepLog.list('-date', 500) });
 
-export default function AdminAIInsights() {
-    const [aiSummary, setAiSummary] = useState(null);
-    const [liveInsights, setLiveInsights] = useState([]);
-    const [insightsLoading, setInsightsLoading] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [rangeStart, setRangeStart] = useState(format(subDays(new Date(), 13), 'yyyy-MM-dd'));
-    const [rangeEnd, setRangeEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const cutoff7 = format(subDays(new Date(), 7), 'yyyy-MM-dd');
+    const cutoffN = useCustom && customFrom ? customFrom : format(subDays(new Date(), range), 'yyyy-MM-dd');
+    const cutoffEnd = useCustom && customTo ? customTo : today;
 
-    const setPreset = (days) => {
-        setRangeStart(format(subDays(new Date(), days - 1), 'yyyy-MM-dd'));
-        setRangeEnd(format(new Date(), 'yyyy-MM-dd'));
-    };
+    // --- KPIs ---
+    const totalUsers = profiles.length;
+    const activeUsers7d = useMemo(() => {
+        const active = new Set([
+            ...workoutLogs.filter(l => l.date >= cutoff7).map(l => l.user_email),
+            ...mealLogs.filter(l => l.date >= cutoff7).map(l => l.user_email),
+            ...waterLogs.filter(l => l.date >= cutoff7).map(l => l.user_email),
+            ...stepLogs.filter(l => l.date >= cutoff7).map(l => l.user_email),
+        ]);
+        return active.size;
+    }, [workoutLogs, mealLogs, waterLogs, stepLogs, cutoff7]);
 
-    // ── Queries ───────────────────────────────────────────────────────────────
-    const { data: allProfiles = [] } = useQuery({ queryKey: ['ai-profiles'], queryFn: () => entities.UserProfile.list() });
-    const { data: allMeals = [] } = useQuery({ queryKey: ['ai-meals'], queryFn: () => entities.MealLog.list() });
-    const { data: allWorkouts = [] } = useQuery({ queryKey: ['ai-workouts'], queryFn: () => entities.WorkoutLog.list() });
-    const { data: allWater = [] } = useQuery({ queryKey: ['ai-water'], queryFn: () => entities.WaterLog.list() });
-    const { data: allSteps = [] } = useQuery({ queryKey: ['ai-steps'], queryFn: () => entities.StepLog.list() });
-    const { data: allSleep = [] } = useQuery({ queryKey: ['ai-sleep'], queryFn: () => entities.SleepLog.list() });
-    const { data: allWeight = [] } = useQuery({ queryKey: ['ai-weight'], queryFn: () => entities.WeightLog.list() });
-    const { data: allMissions = [] } = useQuery({ queryKey: ['ai-missions'], queryFn: () => entities.Mission.list() });
-    const { data: allChallenges = [] } = useQuery({ queryKey: ['ai-challenges'], queryFn: () => entities.Challenge.list() });
+    const avgXP = useMemo(() => totalUsers ? Math.round(profiles.reduce((s, p) => s + (p.total_xp || 0), 0) / totalUsers) : 0, [profiles]);
+    const avgStreak = useMemo(() => totalUsers ? (profiles.reduce((s, p) => s + (p.login_streak || 0), 0) / totalUsers).toFixed(1) : 0, [profiles]);
+    const onboardedPct = useMemo(() => totalUsers ? Math.round(profiles.filter(p => p.onboarding_complete).length / totalUsers * 100) : 0, [profiles]);
+    const atRisk = useMemo(() => profiles.filter(p => (p.login_streak || 0) === 0).length, [profiles]);
 
-    // ── Date range ────────────────────────────────────────────────────────────
-    const rangeDates = useMemo(() => {
-        const s = parseISO(rangeStart), e = parseISO(rangeEnd);
-        if (e < s) return [rangeStart];
-        return eachDayOfInterval({ start: s, end: e }).map(d => format(d, 'yyyy-MM-dd'));
-    }, [rangeStart, rangeEnd]);
-
-    const inRange = (date) => date >= rangeStart && date <= rangeEnd;
-
-    // ── Platform KPIs ─────────────────────────────────────────────────────────
-    const kpis = useMemo(() => {
-        const total = allProfiles.length;
-        const active = allProfiles.filter(p => (p.login_streak || 0) > 0).length;
-        const atRisk = allProfiles.filter(p => (p.login_streak || 0) === 0).length;
-        const avgXP = total ? Math.round(allProfiles.reduce((s, p) => s + (p.total_xp || 0), 0) / total) : 0;
-        const avgStreak = total ? +(allProfiles.reduce((s, p) => s + (p.login_streak || 0), 0) / total).toFixed(1) : 0;
-        const streakHeroes = allProfiles.filter(p => (p.login_streak || 0) >= 7).length;
-
-        const rangeMeals = allMeals.filter(m => inRange(m.date));
-        const rangeWorkouts = allWorkouts.filter(w => inRange(w.date));
-        const rangeWater = allWater.filter(w => inRange(w.date));
-        const rangeSteps = allSteps.filter(s => inRange(s.date));
-        const rangeSleep = allSleep.filter(s => inRange(s.date));
-
-        const days = rangeDates.length || 1;
-        const avgDailyWorkouts = +(rangeWorkouts.length / days).toFixed(1);
-        const avgDailyCalories = rangeMeals.length
-            ? Math.round(rangeMeals.reduce((s, m) => s + (m.calories || 0), 0) / days)
-            : 0;
-        const avgDailyWater = rangeWater.length
-            ? Math.round(rangeWater.reduce((s, w) => s + (w.amount_ml || 0), 0) / days)
-            : 0;
-        const avgDailySteps = rangeSteps.length
-            ? Math.round(rangeSteps.reduce((s, st) => s + (st.steps || 0), 0) / days)
-            : 0;
-        const avgSleepHours = rangeSleep.length
-            ? +(rangeSleep.reduce((s, sl) => s + (sl.hours || 0), 0) / rangeSleep.length).toFixed(1)
-            : 0;
-
-        const uniqueActiveUsers = new Set([
-            ...rangeMeals.map(m => m.user_email),
-            ...rangeWorkouts.map(w => w.user_email),
-            ...rangeSteps.map(s => s.user_email),
-        ]).size;
-
-        return {
-            total, active, atRisk, avgXP, avgStreak, streakHeroes,
-            avgDailyWorkouts, avgDailyCalories, avgDailyWater, avgDailySteps,
-            avgSleepHours, uniqueActiveUsers,
-            totalWorkouts: rangeWorkouts.length,
-            totalMealsLogged: rangeMeals.length,
-        };
-    }, [allProfiles, allMeals, allWorkouts, allWater, allSteps, allSleep, rangeDates]);
-
-    // ── Daily activity chart ──────────────────────────────────────────────────
-    const dailyActivityData = useMemo(() => rangeDates.map(date => ({
-        date: format(parseISO(date), rangeDates.length <= 31 ? 'MMM d' : 'MMM d'),
-        workouts: allWorkouts.filter(w => w.date === date).length,
-        meals: allMeals.filter(m => m.date === date).length,
-        water: Math.round(allWater.filter(w => w.date === date).reduce((s, w) => s + (w.amount_ml || 0), 0) / 1000 * 10) / 10,
-        steps: Math.round(allSteps.filter(s => s.date === date).reduce((s, st) => s + (st.steps || 0), 0) / 1000 * 10) / 10,
-    })), [rangeDates, allWorkouts, allMeals, allWater, allSteps]);
-
-    // ── Sleep quality chart ───────────────────────────────────────────────────
-    const sleepData = useMemo(() => rangeDates.map(date => ({
-        date: format(parseISO(date), 'MMM d'),
-        hours: +(allSleep.filter(s => s.date === date).reduce((s, sl) => s + (sl.hours || 0), 0)).toFixed(1),
-    })), [rangeDates, allSleep]);
-
-    // ── User engagement over time ─────────────────────────────────────────────
-    const engagementData = useMemo(() => rangeDates.map(date => {
-        const activeUsers = new Set([
-            ...allMeals.filter(m => m.date === date).map(m => m.user_email),
-            ...allWorkouts.filter(w => w.date === date).map(w => w.user_email),
-            ...allSteps.filter(s => s.date === date).map(s => s.user_email),
-            ...allWater.filter(w => w.date === date).map(w => w.user_email),
-        ]).size;
-        return {
-            date: format(parseISO(date), 'MMM d'),
-            activeUsers,
-        };
-    }), [rangeDates, allMeals, allWorkouts, allSteps, allWater]);
-
-    // ── Workout type breakdown ────────────────────────────────────────────────
-    const workoutTypeData = useMemo(() => {
-        const rangeWorkouts = allWorkouts.filter(w => inRange(w.date));
+    // --- Charts ---
+    const goalDistribution = useMemo(() => {
         const counts = {};
-        rangeWorkouts.forEach(w => { counts[w.workout_type] = (counts[w.workout_type] || 0) + 1; });
-        return Object.entries(counts).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
-    }, [allWorkouts, rangeStart, rangeEnd]);
+        profiles.forEach(p => { const g = p.fitness_goal || 'not_set'; counts[g] = (counts[g] || 0) + 1; });
+        return Object.entries(counts).map(([name, value]) => ({ name: goalLabels[name] || name, value }));
+    }, [profiles]);
 
-    // ── Meal type breakdown ───────────────────────────────────────────────────
-    const mealTypeData = useMemo(() => {
-        const rangeMeals = allMeals.filter(m => inRange(m.date));
+    const activityDistribution = useMemo(() => {
         const counts = {};
-        rangeMeals.forEach(m => { counts[m.meal_type] = (counts[m.meal_type] || 0) + 1; });
-        return Object.entries(counts).map(([name, value]) => ({ name, value }));
-    }, [allMeals, rangeStart, rangeEnd]);
+        profiles.forEach(p => { const a = p.activity_level || 'not_set'; counts[a] = (counts[a] || 0) + 1; });
+        return Object.entries(counts).map(([name, value]) => ({ name: activityLabels[name] || name, value }));
+    }, [profiles]);
 
-    // ── User streaks distribution ─────────────────────────────────────────────
-    const streakDistData = useMemo(() => {
-        const buckets = { '0': 0, '1-3': 0, '4-7': 0, '8-14': 0, '15-30': 0, '30+': 0 };
-        allProfiles.forEach(p => {
+    const streakDistribution = useMemo(() => {
+        const buckets = { '0 (Inactive)': 0, '1-7d': 0, '8-14d': 0, '15-30d': 0, '30d+': 0 };
+        profiles.forEach(p => {
             const s = p.login_streak || 0;
-            if (s === 0) buckets['0']++;
-            else if (s <= 3) buckets['1-3']++;
-            else if (s <= 7) buckets['4-7']++;
-            else if (s <= 14) buckets['8-14']++;
-            else if (s <= 30) buckets['15-30']++;
-            else buckets['30+']++;
+            if (s === 0) buckets['0 (Inactive)']++;
+            else if (s <= 7) buckets['1-7d']++;
+            else if (s <= 14) buckets['8-14d']++;
+            else if (s <= 30) buckets['15-30d']++;
+            else buckets['30d+']++;
         });
         return Object.entries(buckets).map(([name, value]) => ({ name, value }));
-    }, [allProfiles]);
+    }, [profiles]);
 
-    // ── Plan distribution ─────────────────────────────────────────────────────
-    const planData = useMemo(() => {
-        const counts = { free: 0, basic: 0, premium: 0, elite: 0 };
-        allProfiles.forEach(p => { counts[p.plan || 'free']++; });
-        return Object.entries(counts).map(([name, value]) => ({ name: name.charAt(0).toUpperCase() + name.slice(1), value }));
-    }, [allProfiles]);
-
-    // ── Calorie trend ─────────────────────────────────────────────────────────
-    const calorieTrendData = useMemo(() => rangeDates.map(date => {
-        const dayMeals = allMeals.filter(m => m.date === date);
-        return {
-            date: format(parseISO(date), 'MMM d'),
-            calories: dayMeals.reduce((s, m) => s + (m.calories || 0), 0),
-            protein: dayMeals.reduce((s, m) => s + (m.protein || 0), 0),
-        };
-    }), [rangeDates, allMeals]);
-
-    // ── Weight trend (avg across all users) ──────────────────────────────────
-    const weightTrendData = useMemo(() => rangeDates.map(date => {
-        const dayLogs = allWeight.filter(w => w.date === date);
-        const avg = dayLogs.length ? +(dayLogs.reduce((s, w) => s + (w.weight_kg || 0), 0) / dayLogs.length).toFixed(1) : null;
-        return { date: format(parseISO(date), 'MMM d'), avgWeight: avg };
-    }).filter(d => d.avgWeight !== null), [rangeDates, allWeight]);
-
-    // ── Top users by XP ───────────────────────────────────────────────────────
-    const topUsers = useMemo(() =>
-        [...allProfiles].sort((a, b) => (b.total_xp || 0) - (a.total_xp || 0)).slice(0, 5),
-        [allProfiles]);
-
-    // ── At-risk users ─────────────────────────────────────────────────────────
-    const atRiskUsers = useMemo(() =>
-        allProfiles.filter(p => (p.login_streak || 0) === 0).slice(0, 5),
-        [allProfiles]);
-
-    const PIE_COLORS = ['#8b5cf6', '#06b6d4', '#f59e0b', '#10b981', '#f97316', '#3b82f6', '#ec4899'];
-
-    const generateLiveInsights = async () => {
-        setInsightsLoading(true);
-        try {
-            const res = await invokeLLM({
-                prompt: `You are a fitness platform AI analyst. Generate 6 specific actionable insight cards for the coaching team based on these REAL platform stats:
-
-Users: ${kpis.total} total, ${kpis.active} active, ${kpis.atRisk} at-risk
-Engagement: ${kpis.uniqueActiveUsers} unique active users in date range
-Avg daily workouts: ${kpis.avgDailyWorkouts}
-Avg daily calories logged: ${kpis.avgDailyCalories} kcal
-Avg daily water: ${kpis.avgDailyWater}ml
-Avg daily steps: ${kpis.avgDailySteps.toLocaleString()}
-Avg sleep: ${kpis.avgSleepHours}h
-Avg XP: ${kpis.avgXP}
-Users with 7+ day streak: ${kpis.streakHeroes}
-Total workouts in period: ${kpis.totalWorkouts}
-Total meals logged: ${kpis.totalMealsLogged}
-Active challenges: ${allChallenges.filter(c => c.is_active).length}
-
-Generate 6 specific, data-driven insights. Reference actual numbers.`,
-                response_json_schema: {
-                    type: 'object',
-                    properties: {
-                        insights: {
-                            type: 'array',
-                            items: {
-                                type: 'object',
-                                properties: {
-                                    category: { type: 'string' },
-                                    title: { type: 'string' },
-                                    body: { type: 'string' },
-                                    action: { type: 'string' },
-                                    priority: { type: 'string' },
-                                    icon_type: { type: 'string' },
-                                }
-                            }
-                        }
-                    }
-                }
+    // Daily activity trend over selected range
+    const dailyTrend = useMemo(() => {
+        const days = [];
+        let cur = new Date(cutoffN + 'T00:00:00');
+        const end = new Date(cutoffEnd + 'T00:00:00');
+        while (cur <= end) {
+            const date = format(cur, 'yyyy-MM-dd');
+            days.push({
+                date: format(cur, 'MMM d'),
+                workouts: workoutLogs.filter(l => l.date === date).length,
+                meals: new Set(mealLogs.filter(l => l.date === date).map(l => l.user_email)).size,
+                water: new Set(waterLogs.filter(l => l.date === date).map(l => l.user_email)).size,
+                steps: new Set(stepLogs.filter(l => l.date === date).map(l => l.user_email)).size,
             });
-            setLiveInsights(res.insights || []);
-        } catch { toast.error('Failed to generate insights'); }
-        finally { setInsightsLoading(false); }
-    };
+            cur = new Date(cur.getTime() + 86400000);
+        }
+        return days;
+    }, [cutoffN, cutoffEnd, workoutLogs, mealLogs, waterLogs, stepLogs]);
 
-    const generateDailySummary = async () => {
-        setLoading(true);
-        try {
-            const res = await invokeLLM({
-                prompt: `You are an AI fitness platform analytics engine. Generate a comprehensive admin summary based on REAL data:
+    // XP bucket distribution
+    const xpDistribution = useMemo(() => {
+        const buckets = { '0': 0, '1-500': 0, '501-2k': 0, '2k-5k': 0, '5k+': 0 };
+        profiles.forEach(p => {
+            const x = p.total_xp || 0;
+            if (x === 0) buckets['0']++;
+            else if (x <= 500) buckets['1-500']++;
+            else if (x <= 2000) buckets['501-2k']++;
+            else if (x <= 5000) buckets['2k-5k']++;
+            else buckets['5k+']++;
+        });
+        return Object.entries(buckets).map(([name, value]) => ({ name, value }));
+    }, [profiles]);
 
-Platform Stats (${rangeStart} to ${rangeEnd}):
-- Total users: ${kpis.total} (${kpis.active} active, ${kpis.atRisk} at-risk)
-- Unique active users in period: ${kpis.uniqueActiveUsers}
-- Avg daily workouts logged: ${kpis.avgDailyWorkouts}
-- Avg daily calories: ${kpis.avgDailyCalories} kcal
-- Avg daily water: ${kpis.avgDailyWater}ml (goal: 2000ml)
-- Avg daily steps: ${kpis.avgDailySteps.toLocaleString()} (goal: 10,000)
-- Avg sleep: ${kpis.avgSleepHours}h (ideal: 7-9h)
-- Platform avg XP: ${kpis.avgXP}
-- Avg login streak: ${kpis.avgStreak} days
-- Users with 7+ day streak: ${kpis.streakHeroes}/${kpis.total}
-- Total workouts: ${kpis.totalWorkouts}
-- Total meals logged: ${kpis.totalMealsLogged}
-- Active challenges: ${allChallenges.filter(c => c.is_active).length}
+    // Workout type breakdown
+    const workoutTypeBreakdown = useMemo(() => {
+        const counts = {};
+        workoutLogs.filter(l => l.date >= cutoffN && l.date <= cutoffEnd).forEach(l => { const t = l.workout_type || 'other'; counts[t] = (counts[t] || 0) + 1; });
+        return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, value]) => ({ name, value }));
+    }, [workoutLogs, cutoffN, cutoffEnd]);
 
-Provide specific, data-driven analysis and actionable recommendations.`,
-                response_json_schema: {
-                    type: 'object',
-                    properties: {
-                        summary: { type: 'string' },
-                        key_metrics: { type: 'array', items: { type: 'object', properties: { metric: { type: 'string' }, value: { type: 'string' }, trend: { type: 'string' }, status: { type: 'string' } } } },
-                        top_priorities: { type: 'array', items: { type: 'string' } },
-                        recommended_actions: { type: 'array', items: { type: 'object', properties: { action: { type: 'string' }, reason: { type: 'string' }, impact: { type: 'string' } } } },
-                        coaching_tip: { type: 'string' },
-                    }
-                }
-            });
-            setAiSummary(res);
-            toast.success('AI summary generated!');
-        } catch { toast.error('Failed to generate summary'); }
-        finally { setLoading(false); }
-    };
+    // Top active users
+    const topUsers = useMemo(() => {
+        const map = {};
+        workoutLogs.filter(l => l.date >= cutoffN && l.date <= cutoffEnd).forEach(l => { map[l.user_email] = (map[l.user_email] || 0) + 1; });
+        return Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([email, workouts]) => {
+            const p = profiles.find(p => p.user_email === email);
+            return { email, workouts, xp: p?.total_xp || 0, streak: p?.login_streak || 0 };
+        });
+    }, [workoutLogs, profiles, cutoffN]);
 
     return (
         <div className="space-y-6">
-            {/* Header */}
             <div className="flex items-center justify-between flex-wrap gap-3">
-                <div>
-                    <h1 className="text-2xl font-space font-bold flex items-center gap-2">
-                        <Brain className="w-7 h-7 text-purple-400" /> AI Platform Insights
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Real data analytics & AI coaching recommendations</p>
-                </div>
-                <div className="flex gap-2 flex-wrap">
-                    <Button onClick={generateLiveInsights} disabled={insightsLoading} variant="outline" className="border-white/10">
-                        {insightsLoading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Generating...</> : <><Zap className="w-4 h-4 mr-2" />Generate Insights</>}
-                    </Button>
-                    <Button onClick={generateDailySummary} disabled={loading}
-                        className="bg-gradient-to-r from-purple-500 to-pink-500 hover:opacity-90 text-white font-semibold">
-                        {loading ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</> : <><Brain className="w-4 h-4 mr-2" />AI Summary</>}
-                    </Button>
-                </div>
-            </div>
-
-            {/* Date range filter */}
-            <div className="glass rounded-2xl px-4 py-3 border border-white/5 flex flex-wrap items-center gap-3">
-                <CalendarRange className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Date Range</span>
-                <div className="flex gap-1">
-                    {RANGE_PRESETS.map(p => (
-                        <button key={p.label} onClick={() => setPreset(p.days)}
-                            className="text-xs px-2.5 py-1 rounded-lg font-medium text-muted-foreground hover:bg-white/5 hover:text-white transition-all border border-white/5">
-                            {p.label}
+                <h1 className="text-2xl font-space font-bold flex items-center gap-3"><BarChart3 className="w-7 h-7 text-blue-400" /> Platform Analytics</h1>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {[7, 14, 30, 60].map(r => (
+                        <button key={r} onClick={() => { setRange(r); setUseCustom(false); }}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                            {r}d
                         </button>
                     ))}
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
+                        <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                        <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                        <span className="text-xs text-muted-foreground">–</span>
+                        <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                        {customFrom && customTo && (
+                            <button onClick={() => setUseCustom(true)}
+                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-muted-foreground border border-white/10 hover:border-blue-500/30 hover:text-blue-300'}`}>
+                                Apply
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-xl px-3 py-1.5">
-                    <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
-                        className="bg-transparent text-xs text-white border-none outline-none w-[115px] [color-scheme:dark]" />
-                    <span className="text-muted-foreground text-xs">→</span>
-                    <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
-                        className="bg-transparent text-xs text-white border-none outline-none w-[115px] [color-scheme:dark]" />
-                </div>
-                <span className="text-xs text-muted-foreground ml-auto">{rangeDates.length} days selected</span>
             </div>
 
             {/* KPI Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <StatCard label="Total Users" value={kpis.total} icon={Users} color="text-purple-400" />
-                <StatCard label="Active Users" value={kpis.active} sub="streak > 0" icon={Flame} color="text-orange-400" />
-                <StatCard label="At Risk" value={kpis.atRisk} sub="no streak" icon={AlertTriangle} color="text-red-400" />
-                <StatCard label="Avg Daily Steps" value={kpis.avgDailySteps.toLocaleString()} sub="platform avg" icon={Activity} color="text-emerald-400" />
-                <StatCard label="Avg Sleep" value={kpis.avgSleepHours ? `${kpis.avgSleepHours}h` : '—'} sub="platform avg" icon={Moon} color="text-blue-400" />
-                <StatCard label="Avg XP" value={kpis.avgXP.toLocaleString()} sub="per user" icon={Star} color="text-yellow-400" />
-                <StatCard label="Daily Workouts" value={kpis.avgDailyWorkouts} sub="avg per day" icon={Dumbbell} color="text-purple-400" />
-                <StatCard label="Avg Calories" value={kpis.avgDailyCalories ? `${kpis.avgDailyCalories}` : '—'} sub="daily avg" icon={Utensils} color="text-orange-400" />
-                <StatCard label="Avg Water" value={kpis.avgDailyWater ? `${kpis.avgDailyWater}ml` : '—'} sub="daily avg" icon={Droplets} color="text-cyan-400" />
-                <StatCard label="Streak Heroes" value={kpis.streakHeroes} sub="7+ day streak" icon={Flame} color="text-yellow-400" />
-                <StatCard label="Unique Active" value={kpis.uniqueActiveUsers} sub="in date range" icon={Users} color="text-emerald-400" />
-                <StatCard label="Total Workouts" value={kpis.totalWorkouts} sub="in date range" icon={Dumbbell} color="text-blue-400" />
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <KPICard icon={Users} label="Total Users" value={totalUsers} sub="all registered" iconColor="text-blue-400" color="text-blue-300" />
+                <KPICard icon={Activity} label="Active (7d)" value={activeUsers7d} sub="logged any metric" iconColor="text-emerald-400" color="text-emerald-300" />
+                <KPICard icon={Flame} label="At Risk" value={atRisk} sub="0-day streak" iconColor="text-red-400" color="text-red-300" />
+                <KPICard icon={Zap} label="Avg XP" value={avgXP.toLocaleString()} sub="per user" iconColor="text-yellow-400" color="text-yellow-300" />
+                <KPICard icon={TrendingUp} label="Avg Streak" value={`${avgStreak}d`} sub="login days" iconColor="text-orange-400" color="text-orange-300" />
             </div>
 
-            {/* Row 1: User Engagement + Daily Workouts */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <KPICard icon={Users} label="Onboarded" value={`${onboardedPct}%`} sub={`${profiles.filter(p => p.onboarding_complete).length} users`} iconColor="text-purple-400" color="text-purple-300" />
+                <KPICard icon={Dumbbell} label={`Workouts (${range}d)`} value={workoutLogs.filter(l => l.date >= cutoffN).length} sub="total sessions" iconColor="text-purple-400" />
+                <KPICard icon={Droplets} label={`Water Logs (${range}d)`} value={waterLogs.filter(l => l.date >= cutoffN).length} sub="total entries" iconColor="text-cyan-400" />
+                <KPICard icon={Moon} label="Best Streak" value={`${Math.max(...profiles.map(p => p.longest_streak || 0), 0)}d`} sub="platform record" iconColor="text-blue-400" />
+            </div>
+
+            {/* Daily Engagement Trend */}
+            <GlassCard animate={false}>
+                <h3 className="font-semibold mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-400" /> Daily Active Loggers (last {range} days)</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={dailyTrend}>
+                        <defs>
+                            <linearGradient id="wkg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#a855f7" stopOpacity={0.3} /><stop offset="100%" stopColor="#a855f7" stopOpacity={0} /></linearGradient>
+                            <linearGradient id="mlg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#22c55e" stopOpacity={0.3} /><stop offset="100%" stopColor="#22c55e" stopOpacity={0} /></linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                        <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={11} tick={{ fontSize: 10 }} />
+                        <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                        <Tooltip content={<CustomTooltip />} />
+                        <Area type="monotone" dataKey="meals" name="Meal Loggers" stroke="#22c55e" fill="url(#mlg)" strokeWidth={2} dot={false} />
+                        <Area type="monotone" dataKey="water" name="Water Loggers" stroke="#06b6d4" fill="none" strokeWidth={1.5} dot={false} strokeDasharray="4 2" />
+                        <Area type="monotone" dataKey="workouts" name="Workouts" stroke="#a855f7" fill="url(#wkg)" strokeWidth={2} dot={false} />
+                    </AreaChart>
+                </ResponsiveContainer>
+            </GlassCard>
+
+            {/* Goal + Streak Distribution */}
             <div className="grid lg:grid-cols-2 gap-5">
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Users className="w-4 h-4 text-purple-400" /> Daily Active Users
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <AreaChart data={engagementData}>
-                            <defs>
-                                <linearGradient id="engGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity={0.3} />
-                                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Area type="monotone" dataKey="activeUsers" name="Active Users" stroke="#8b5cf6" fill="url(#engGrad)" strokeWidth={2} dot={false} />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Dumbbell className="w-4 h-4 text-blue-400" /> Daily Workouts Logged
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={dailyActivityData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Bar dataKey="workouts" name="Workouts" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* Row 2: Calories + Steps */}
-            <div className="grid lg:grid-cols-2 gap-5">
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Utensils className="w-4 h-4 text-orange-400" /> Platform Calories & Protein
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <AreaChart data={calorieTrendData}>
-                            <defs>
-                                <linearGradient id="calGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#f97316" stopOpacity={0.25} />
-                                    <stop offset="100%" stopColor="#f97316" stopOpacity={0} />
-                                </linearGradient>
-                                <linearGradient id="proGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.25} />
-                                    <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Area type="monotone" dataKey="calories" name="Calories" stroke="#f97316" fill="url(#calGrad)" strokeWidth={2} dot={false} />
-                            <Area type="monotone" dataKey="protein" name="Protein (g)" stroke="#3b82f6" fill="url(#proGrad)" strokeWidth={2} dot={false} />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-emerald-400" /> Daily Steps (000s)
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={dailyActivityData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Bar dataKey="steps" name="Steps (k)" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* Row 3: Sleep + Water */}
-            <div className="grid lg:grid-cols-2 gap-5">
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Moon className="w-4 h-4 text-blue-400" /> Sleep Duration Trend
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <BarChart data={sleepData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} domain={[0, 10]} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Bar dataKey="hours" name="Sleep (h)" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Droplets className="w-4 h-4 text-cyan-400" /> Daily Water (L)
-                    </h3>
-                    <ResponsiveContainer width="100%" height={200}>
-                        <AreaChart data={dailyActivityData}>
-                            <defs>
-                                <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
-                                    <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.3} />
-                                    <stop offset="100%" stopColor="#06b6d4" stopOpacity={0} />
-                                </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Area type="monotone" dataKey="water" name="Water (L)" stroke="#06b6d4" fill="url(#waterGrad)" strokeWidth={2} dot={false} />
-                        </AreaChart>
-                    </ResponsiveContainer>
-                </div>
-            </div>
-
-            {/* Row 4: Workout types + Meal types + Streak dist + Plan dist */}
-            <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Dumbbell className="w-4 h-4 text-purple-400" /> Workout Types
-                    </h3>
-                    {workoutTypeData.length === 0
-                        ? <p className="text-xs text-muted-foreground italic">No data</p>
-                        : <ResponsiveContainer width="100%" height={180}>
-                            <PieChart>
-                                <Pie data={workoutTypeData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                                    {workoutTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                                </Pie>
-                                <Tooltip content={<ChartTooltip />} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    }
-                    <div className="space-y-1 mt-2">
-                        {workoutTypeData.slice(0, 4).map((w, i) => (
-                            <div key={w.name} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                                    <span className="text-muted-foreground capitalize">{w.name}</span>
-                                </div>
-                                <span className="font-semibold">{w.value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Utensils className="w-4 h-4 text-orange-400" /> Meal Types
-                    </h3>
-                    {mealTypeData.length === 0
-                        ? <p className="text-xs text-muted-foreground italic">No data</p>
-                        : <ResponsiveContainer width="100%" height={180}>
-                            <PieChart>
-                                <Pie data={mealTypeData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                                    {mealTypeData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
-                                </Pie>
-                                <Tooltip content={<ChartTooltip />} />
-                            </PieChart>
-                        </ResponsiveContainer>
-                    }
-                    <div className="space-y-1 mt-2">
-                        {mealTypeData.map((m, i) => (
-                            <div key={m.name} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                                    <span className="text-muted-foreground capitalize">{m.name}</span>
-                                </div>
-                                <span className="font-semibold">{m.value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Flame className="w-4 h-4 text-orange-400" /> Streak Distribution
-                    </h3>
-                    <ResponsiveContainer width="100%" height={180}>
-                        <BarChart data={streakDistData} layout="vertical">
-                            <XAxis type="number" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis type="category" dataKey="name" stroke="rgba(255,255,255,0.25)" fontSize={10} width={35} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Bar dataKey="value" name="Users" fill="#f97316" radius={[0, 4, 4, 0]} />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Star className="w-4 h-4 text-yellow-400" /> Plan Distribution
-                    </h3>
-                    <ResponsiveContainer width="100%" height={180}>
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><Target className="w-4 h-4 text-emerald-400" /> Fitness Goal Distribution</h3>
+                    <ResponsiveContainer width="100%" height={220}>
                         <PieChart>
-                            <Pie data={planData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                                {planData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                            <Pie data={goalDistribution} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={40}
+                                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                                {goalDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                             </Pie>
-                            <Tooltip content={<ChartTooltip />} />
+                            <Tooltip content={<CustomTooltip />} />
                         </PieChart>
                     </ResponsiveContainer>
-                    <div className="space-y-1 mt-2">
-                        {planData.map((p, i) => (
-                            <div key={p.name} className="flex items-center justify-between text-xs">
-                                <div className="flex items-center gap-1.5">
-                                    <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i % PIE_COLORS.length] }} />
-                                    <span className="text-muted-foreground">{p.name}</span>
-                                </div>
-                                <span className="font-semibold">{p.value}</span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
+                </GlassCard>
 
-            {/* Row 5: Weight trend (if data exists) */}
-            {weightTrendData.length > 1 && (
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Scale className="w-4 h-4 text-emerald-400" /> Avg Platform Weight Trend
-                        <span className="text-xs text-muted-foreground font-normal">(across all users)</span>
-                    </h3>
-                    <ResponsiveContainer width="100%" height={180}>
-                        <LineChart data={weightTrendData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.25)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.25)" fontSize={10} domain={['auto', 'auto']} />
-                            <Tooltip content={<ChartTooltip />} />
-                            <Line type="monotone" dataKey="avgWeight" name="Avg Weight (kg)" stroke="#10b981" strokeWidth={2.5} dot={{ fill: '#10b981', r: 3 }} />
-                        </LineChart>
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-purple-400" /> Login Streak Distribution</h3>
+                    <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={streakDistribution}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                            <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="value" name="Users" radius={[6, 6, 0, 0]}>
+                                {streakDistribution.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                            </Bar>
+                        </BarChart>
                     </ResponsiveContainer>
-                </div>
-            )}
-
-            {/* Row 6: Top users + At-risk users */}
-            <div className="grid lg:grid-cols-2 gap-5">
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <Star className="w-4 h-4 text-yellow-400" /> Top Users by XP
-                    </h3>
-                    <div className="space-y-2">
-                        {topUsers.map((u, i) => (
-                            <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3 transition-colors">
-                                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-500/20 text-yellow-400' : i === 1 ? 'bg-gray-400/20 text-gray-300' : i === 2 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-muted-foreground'}`}>
-                                    {i + 1}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium truncate">{u.user_email?.split('@')[0]}</div>
-                                    <div className="text-xs text-muted-foreground">{u.user_email}</div>
-                                </div>
-                                <div className="text-right flex-shrink-0">
-                                    <div className="text-sm font-bold text-yellow-400">{(u.total_xp || 0).toLocaleString()} XP</div>
-                                    <div className="text-xs text-muted-foreground">🔥 {u.login_streak || 0}d streak</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="glass rounded-2xl p-5 border border-white/5">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-red-400" /> At-Risk Users
-                        <span className="text-xs text-muted-foreground font-normal">(no active streak)</span>
-                    </h3>
-                    {atRiskUsers.length === 0
-                        ? <p className="text-sm text-emerald-400 italic">🎉 All users have active streaks!</p>
-                        : <div className="space-y-2">
-                            {atRiskUsers.map(u => (
-                                <div key={u.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-red-500/3 border border-red-500/10">
-                                    <div className="w-8 h-8 rounded-xl bg-red-500/10 flex items-center justify-center text-sm font-bold text-red-400 flex-shrink-0">
-                                        {u.user_email?.[0]?.toUpperCase()}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-sm font-medium truncate">{u.user_email?.split('@')[0]}</div>
-                                        <div className="text-xs text-muted-foreground">{u.user_email}</div>
-                                    </div>
-                                    <div className="text-right flex-shrink-0">
-                                        <div className="text-xs text-red-400 font-semibold">No streak</div>
-                                        <div className="text-xs text-muted-foreground">{(u.total_xp || 0)} XP</div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    }
-                </div>
+                </GlassCard>
             </div>
 
-            {/* AI Summary Result */}
-            {aiSummary && (
-                <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
-                    className="glass rounded-2xl p-6 border border-purple-500/30 bg-purple-500/5">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                            <Brain className="w-5 h-5 text-purple-400" />
-                        </div>
-                        <div>
-                            <div className="font-bold">AI Analysis Summary</div>
-                            <div className="text-xs text-muted-foreground">{rangeStart} → {rangeEnd}</div>
-                        </div>
-                        <Button variant="ghost" size="icon" className="ml-auto" onClick={generateDailySummary}>
-                            <RefreshCw className="w-4 h-4" />
-                        </Button>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-5 leading-relaxed bg-white/3 rounded-xl p-4 border border-white/5 italic">
-                        "{aiSummary.summary}"
-                    </p>
-                    {aiSummary.key_metrics?.length > 0 && (
-                        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-                            {aiSummary.key_metrics.map((m, i) => (
-                                <div key={i} className="glass rounded-xl p-3 border border-white/5">
-                                    <div className="text-xs text-muted-foreground mb-1">{m.metric}</div>
-                                    <div className="font-bold text-sm">{m.value}</div>
-                                    <div className={`text-[10px] mt-1 ${m.status === 'positive' ? 'text-emerald-400' : m.status === 'negative' ? 'text-red-400' : 'text-yellow-400'}`}>{m.trend}</div>
+            {/* Activity Level + XP Distribution */}
+            <div className="grid lg:grid-cols-2 gap-5">
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><Activity className="w-4 h-4 text-blue-400" /> Activity Level Distribution</h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={activityDistribution} layout="vertical">
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis type="number" stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                            <YAxis type="category" dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} width={90} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="value" name="Users" fill="#3b82f6" radius={[0, 6, 6, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </GlassCard>
+
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><Zap className="w-4 h-4 text-yellow-400" /> XP Distribution</h3>
+                    <ResponsiveContainer width="100%" height={200}>
+                        <BarChart data={xpDistribution}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                            <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={11} />
+                            <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Bar dataKey="value" name="Users" fill="#f59e0b" radius={[6, 6, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </GlassCard>
+            </div>
+
+            {/* Workout Type Breakdown + Top Active Users */}
+            <div className="grid lg:grid-cols-2 gap-5">
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><Dumbbell className="w-4 h-4 text-purple-400" /> Workout Types (last {range}d)</h3>
+                    {workoutTypeBreakdown.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">No workouts logged in this period.</p>
+                    ) : (
+                        <ResponsiveContainer width="100%" height={200}>
+                            <BarChart data={workoutTypeBreakdown}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                <XAxis dataKey="name" stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                                <Tooltip content={<CustomTooltip />} />
+                                <Bar dataKey="value" name="Sessions" radius={[6, 6, 0, 0]}>
+                                    {workoutTypeBreakdown.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    )}
+                </GlassCard>
+
+                <GlassCard animate={false}>
+                    <h3 className="font-semibold mb-4 flex items-center gap-2"><Flame className="w-4 h-4 text-orange-400" /> Most Active Users (last {range}d)</h3>
+                    {topUsers.length === 0 ? (
+                        <p className="text-sm text-muted-foreground italic">No activity logged in this period.</p>
+                    ) : (
+                        <div className="space-y-2">
+                            {topUsers.map((u, i) => (
+                                <div key={u.email} className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/3 text-sm">
+                                    <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${i === 0 ? 'bg-yellow-500/20 text-yellow-400' : i === 1 ? 'bg-white/10 text-white' : i === 2 ? 'bg-orange-500/20 text-orange-400' : 'bg-white/5 text-muted-foreground'}`}>{i + 1}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="truncate text-xs font-medium">{u.email}</div>
+                                        <div className="text-[10px] text-muted-foreground">{u.streak}🔥 streak · {u.xp.toLocaleString()} XP</div>
+                                    </div>
+                                    <span className="text-purple-400 font-semibold text-xs flex-shrink-0">{u.workouts} sessions</span>
                                 </div>
                             ))}
                         </div>
                     )}
-                    {aiSummary.recommended_actions?.length > 0 && (
-                        <div>
-                            <h4 className="text-sm font-semibold mb-3 text-purple-300">Recommended Actions</h4>
-                            <div className="space-y-2">
-                                {aiSummary.recommended_actions.map((a, i) => (
-                                    <div key={i} className="flex items-start gap-3 p-3 rounded-xl bg-white/3 border border-white/5">
-                                        <div className="w-6 h-6 rounded-full bg-purple-500/20 text-purple-400 flex items-center justify-center text-xs font-bold flex-shrink-0">{i + 1}</div>
-                                        <div>
-                                            <div className="text-sm font-medium">{a.action}</div>
-                                            <div className="text-xs text-muted-foreground">{a.reason}</div>
-                                            {a.impact && <div className="text-xs text-emerald-400 mt-0.5">Impact: {a.impact}</div>}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                    {aiSummary.coaching_tip && (
-                        <div className="mt-4 p-3 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
-                            <span className="text-xs text-emerald-400 font-semibold">Coach Tip: </span>
-                            <span className="text-xs text-muted-foreground">{aiSummary.coaching_tip}</span>
-                        </div>
-                    )}
-                </motion.div>
-            )}
+                </GlassCard>
+            </div>
 
-            {/* AI Insights Grid */}
-            {liveInsights.length > 0 && (
-                <div>
-                    <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-widest mb-4 flex items-center gap-2">
-                        <Zap className="w-4 h-4 text-yellow-400" /> AI Generated Insights
-                    </h3>
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {liveInsights.map((ins, i) => {
-                            const iconMap = { retention: TrendingDown, nutrition: Utensils, workout: Dumbbell, hydration: Droplets, engagement: Flame, milestone: Star };
-                            const colorMap = {
-                                retention: 'text-red-400 bg-red-500/10 border-red-500/20',
-                                nutrition: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
-                                workout: 'text-blue-400 bg-blue-500/10 border-blue-500/20',
-                                hydration: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-                                engagement: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20',
-                                milestone: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-                            };
-                            const IconComp = iconMap[ins.icon_type] || Star;
-                            const styles = colorMap[ins.icon_type] || 'text-purple-400 bg-purple-500/10 border-purple-500/20';
-                            const [textColor, bgColor, borderColor] = styles.split(' ');
-                            return (
-                                <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}>
-                                    <div className={`glass rounded-2xl p-5 border h-full ${bgColor} ${borderColor}`}>
-                                        <div className="flex items-start justify-between mb-3">
-                                            <div className={`w-9 h-9 rounded-xl ${bgColor} flex items-center justify-center`}>
-                                                <IconComp className={`w-4 h-4 ${textColor}`} />
-                                            </div>
-                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${PRIORITY_CONFIG[ins.priority]?.color || 'text-muted-foreground bg-white/5 border-white/10'}`}>
-                                                {PRIORITY_CONFIG[ins.priority]?.label || ins.priority}
-                                            </span>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mb-1">{ins.category}</div>
-                                        <h4 className="font-semibold text-sm mb-2">{ins.title}</h4>
-                                        <p className="text-xs text-muted-foreground leading-relaxed mb-4">{ins.body}</p>
-                                        <button className={`text-xs font-semibold ${textColor} hover:underline`}>{ins.action} →</button>
-                                    </div>
-                                </motion.div>
-                            );
-                        })}
-                    </div>
+            {/* Top Performers Table */}
+            <GlassCard animate={false}>
+                <h3 className="font-semibold mb-4 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-blue-400" /> Top Performers by XP</h3>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                        <thead>
+                            <tr className="border-b border-white/5">
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">#</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">User</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">Streak</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">XP</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">Goal</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">Activity</th>
+                                <th className="text-left py-2.5 px-3 text-muted-foreground text-xs">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {[...profiles].sort((a, b) => (b.total_xp || 0) - (a.total_xp || 0)).slice(0, 10).map((p, i) => {
+                                const s = p.login_streak || 0;
+                                const status = s > 3 ? 'Active' : s > 0 ? 'At Risk' : 'Inactive';
+                                return (
+                                    <tr key={p.id} className="border-b border-white/5 hover:bg-white/2">
+                                        <td className="py-2.5 px-3 font-bold text-muted-foreground">{i + 1}</td>
+                                        <td className="py-2.5 px-3 text-xs">{p.user_email}</td>
+                                        <td className="py-2.5 px-3">{p.login_streak || 0} 🔥</td>
+                                        <td className="py-2.5 px-3 font-bold text-yellow-400">{(p.total_xp || 0).toLocaleString()}</td>
+                                        <td className="py-2.5 px-3 text-muted-foreground text-xs">{goalLabels[p.fitness_goal] || '—'}</td>
+                                        <td className="py-2.5 px-3 text-muted-foreground text-xs">{activityLabels[p.activity_level] || '—'}</td>
+                                        <td className="py-2.5 px-3">
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${status === 'Active' ? 'bg-emerald-500/10 text-emerald-400' : status === 'At Risk' ? 'bg-yellow-500/10 text-yellow-400' : 'bg-red-500/10 text-red-400'}`}>{status}</span>
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
-            )}
-
-            {/* Empty state for insights */}
-            {liveInsights.length === 0 && !insightsLoading && (
-                <div className="glass rounded-2xl p-10 border border-white/5 text-center text-muted-foreground">
-                    <Brain className="w-10 h-10 mx-auto mb-3 opacity-20" />
-                    <p className="text-sm">Click "Generate Insights" for AI-powered recommendations based on the real data above.</p>
-                </div>
-            )}
+            </GlassCard>
         </div>
     );
 }
