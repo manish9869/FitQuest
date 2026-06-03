@@ -5,7 +5,7 @@ import {
     LayoutDashboard, Utensils, Droplets, Footprints, Dumbbell, Moon,
     Brain, Trophy, BarChart3, Shield, ChefHat, Zap, Heart, Target,
     Camera, TrendingUp, Map, Settings, Pill, ShoppingCart, Scale,
-    MessageSquare, User
+    MessageSquare, User, LayoutGrid, Crown,
 } from 'lucide-react';
 
 export const PLAN_ORDER = ['free', 'basic', 'premium', 'elite'];
@@ -49,6 +49,11 @@ export const ALL_FEATURES = [
     { feature_id: 'settings', label: 'Settings', icon: Settings, path: '/dashboard/settings', nav_group: 'Tools', sort_order: 36, required_plan: 'free', is_enabled: true, is_beta: false },
     { feature_id: 'messages', label: 'Coach Messages', icon: MessageSquare, path: '/dashboard/messages', nav_group: 'Tools', sort_order: 37, required_plan: 'free', is_enabled: true, is_beta: false },
     { feature_id: 'profile', label: 'My Profile', icon: User, path: '/dashboard/profile', nav_group: 'Tools', sort_order: 38, required_plan: 'free', is_enabled: true, is_beta: false },
+
+    { feature_id: 'workout_plans', label: 'Workout Plans', icon: LayoutGrid, path: '/dashboard/workout-plans', nav_group: 'Library', sort_order: 39, required_plan: 'free', is_enabled: true, is_beta: false },
+    { feature_id: 'programs', label: 'Programs', icon: Crown, path: '/dashboard/programs', nav_group: 'Library', sort_order: 40, required_plan: 'free', is_enabled: true, is_beta: false },
+    { feature_id: 'profile', label: 'XP History', icon: Zap, path: '/dashboard/xp-history', nav_group: 'Library', sort_order: 41, required_plan: 'free', is_enabled: true, is_beta: false },
+
 ];
 
 /**

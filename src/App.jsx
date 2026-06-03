@@ -68,6 +68,9 @@ import PaymentSuccess from '@/pages/PaymentSuccess';
 import Blog from '@/pages/Blog';
 import BlogPostPage from '@/pages/BlogPost';
 import AdminSetupPage from '@/pages/admin/Adminsetup';
+import WorkoutPlans from '@/pages/dashboard/WorkoutPlans';
+import ProgramsPage from '@/pages/dashboard/ProgramsPage';
+import XPHistory from '@/pages/dashboard/XPHistory';
 
 const AuthenticatedApp = () => {
   const { isLoadingAuth } = useAuth();
@@ -124,6 +127,9 @@ const AuthenticatedApp = () => {
           <Route path="body-progress" element={<BodyProgressTracker />} />
           <Route path="profile" element={<Profile />} />
           <Route path="settings" element={<DashboardSettings />} />
+          <Route path="xp-history" element={<XPHistory />} />
+          <Route path="workout-plans" element={<WorkoutPlans />} />
+          <Route path="programs" element={<ProgramsPage />} />
         </Route>
 
         {/* Admin Routes */}

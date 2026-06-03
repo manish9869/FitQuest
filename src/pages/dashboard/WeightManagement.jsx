@@ -8,7 +8,7 @@ import {
     AreaChart, Area, LineChart, Line, BarChart, Bar, XAxis, YAxis,
     CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
-import { Scale, TrendingDown, TrendingUp, Target, Plus, Trash2, Calendar, ChevronDown, Award } from 'lucide-react';
+import { Scale, TrendingDown, TrendingUp, Target, Plus, Trash2, Calendar, ChevronDown, Award, Filter } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import GlassCard from '@/components/ui/GlassCard';
@@ -32,6 +32,10 @@ export default function WeightManagement() {
     const [notes, setNotes] = useState('');
     const [range, setRange] = useState(30);
     const [showForm, setShowForm] = useState(false);
+    const [logRange, setLogRange] = useState(90);
+    const [customLogFrom, setCustomLogFrom] = useState('');
+    const [customLogTo, setCustomLogTo] = useState('');
+    const [useCustomLog, setUseCustomLog] = useState(false);
 
     const { data: profiles = [] } = useQuery({
         queryKey: ['userProfile', user?.email],
@@ -239,10 +243,37 @@ export default function WeightManagement() {
 
             {/* All Entries Log */}
             <GlassCard animate={false}>
-                <h3 className="font-semibold mb-4 flex items-center gap-2">
-                    <Calendar className="w-4 h-4 text-blue-400" /> All Entries
-                    <span className="text-xs text-muted-foreground ml-auto">{logs.length} total</span>
-                </h3>
+                <div className="flex items-start justify-between flex-wrap gap-3 mb-4">
+                    <h3 className="font-semibold flex items-center gap-2">
+                        <Calendar className="w-4 h-4 text-blue-400" /> All Entries
+                    </h3>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        {[30, 90, 180].map(r => (
+                            <button key={r} onClick={() => { setLogRange(r); setUseCustomLog(false); }}
+                                className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${!useCustomLog && logRange === r ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                                {r === 30 ? '1M' : r === 90 ? '3M' : '6M'}
+                            </button>
+                        ))}
+                        <button onClick={() => { setLogRange(99999); setUseCustomLog(false); }}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${!useCustomLog && logRange === 99999 ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                            All
+                        </button>
+                        <div className="flex items-center gap-1 border-l border-white/10 pl-1.5">
+                            <Filter className="w-3 h-3 text-muted-foreground" />
+                            <input type="date" value={customLogFrom} onChange={e => setCustomLogFrom(e.target.value)}
+                                className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-foreground w-28 focus:outline-none" />
+                            <span className="text-xs text-muted-foreground">–</span>
+                            <input type="date" value={customLogTo} onChange={e => setCustomLogTo(e.target.value)}
+                                className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1 text-foreground w-28 focus:outline-none" />
+                            {customLogFrom && customLogTo && (
+                                <button onClick={() => setUseCustomLog(true)}
+                                    className={`text-xs px-2.5 py-1 rounded-lg transition-all ${useCustomLog ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-muted-foreground border border-white/10 hover:border-blue-500/30'}`}>
+                                    Apply
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
 
                 {isLoading ? (
                     <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" /></div>
@@ -254,8 +285,13 @@ export default function WeightManagement() {
                     </div>
                 ) : (
                     <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                        {[...sorted].reverse().map((log, i) => {
-                            const prev = sorted[sorted.length - 2 - i];
+                        {[...sorted].reverse().filter(log => {
+                            if (useCustomLog && customLogFrom && customLogTo) return log.date >= customLogFrom && log.date <= customLogTo;
+                            if (logRange === 99999) return true;
+                            const cutoff = format(subDays(new Date(), logRange), 'yyyy-MM-dd');
+                            return log.date >= cutoff;
+                        }).map((log, i, arr) => {
+                            const prev = arr[i + 1];
                             const diff = prev ? (log.weight_kg - prev.weight_kg).toFixed(1) : null;
                             return (
                                 <div key={log.id} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/3 group transition-colors">
@@ -281,6 +317,14 @@ export default function WeightManagement() {
                                 </div>
                             );
                         })}
+                        {[...sorted].reverse().filter(log => {
+                            if (useCustomLog && customLogFrom && customLogTo) return log.date >= customLogFrom && log.date <= customLogTo;
+                            if (logRange === 99999) return true;
+                            const cutoff = format(subDays(new Date(), logRange), 'yyyy-MM-dd');
+                            return log.date >= cutoff;
+                        }).length === 0 && (
+                                <div className="text-center py-8 text-muted-foreground text-sm">No entries in this date range.</div>
+                            )}
                     </div>
                 )}
             </GlassCard>
@@ -303,5 +347,3 @@ export default function WeightManagement() {
         </div>
     );
 }
-
-

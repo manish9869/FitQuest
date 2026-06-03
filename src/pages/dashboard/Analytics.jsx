@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useAuth } from '@/lib/AuthContext';
 import { entities } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { format, subDays, subWeeks, startOfWeek, endOfWeek } from 'date-fns';
+import { format, subDays, subWeeks, startOfWeek, endOfWeek, parseISO, isWithinInterval } from 'date-fns';
 import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -12,7 +12,7 @@ import GlassCard from '@/components/ui/GlassCard';
 import PersistentResizable from '@/components/ui/PersistentResizable';
 import AnimatedCounter from '@/components/ui/AnimatedCounter';
 import { useWidgetSizes } from '@/lib/useWidgetSizes';
-import { BarChart3, TrendingUp, Scale, Dumbbell, Flame, Footprints, Droplets, Moon } from 'lucide-react';
+import { BarChart3, TrendingUp, Scale, Dumbbell, Flame, Footprints, Droplets, Moon, Calendar } from 'lucide-react';
 
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -27,8 +27,22 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function Analytics() {
     const { user } = useAuth();
     const qc = useQueryClient();
+    const [range, setRange] = useState(14);
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
+    const [useCustom, setUseCustom] = useState(false);
 
-    const last14 = useMemo(() => Array.from({ length: 14 }, (_, i) => format(subDays(new Date(), 13 - i), 'yyyy-MM-dd')), []);
+    const last14 = useMemo(() => {
+        if (useCustom && customFrom && customTo) {
+            const days = [];
+            let cur = new Date(customFrom + 'T00:00:00');
+            const end = new Date(customTo + 'T00:00:00');
+            while (cur <= end) { days.push(format(cur, 'yyyy-MM-dd')); cur = new Date(cur.getTime() + 86400000); }
+            return days;
+        }
+        return Array.from({ length: range }, (_, i) => format(subDays(new Date(), range - 1 - i), 'yyyy-MM-dd'));
+    }, [range, useCustom, customFrom, customTo]);
+
     const last8Weeks = useMemo(() => Array.from({ length: 8 }, (_, i) => {
         const wStart = startOfWeek(subWeeks(new Date(), 7 - i), { weekStartsOn: 1 });
         const wEnd = endOfWeek(wStart, { weekStartsOn: 1 });
@@ -53,6 +67,10 @@ export default function Analytics() {
         if (profile?.id) updateProfileMutation.mutate(data);
     });
 
+    const rangeStart = last14[0] || '';
+    const rangeEnd = last14[last14.length - 1] || '';
+    const rangeLabel = `${last14.length}d`;
+
     const dailyData = useMemo(() => last14.map(date => ({
         date: format(new Date(date), 'MMM d'),
         calories: meals.filter(m => m.date === date).reduce((s, m) => s + (m.calories || 0), 0),
@@ -64,19 +82,24 @@ export default function Analytics() {
     })), [last14, meals, waterLogs, stepLogs, workouts, sleepLogs]);
 
     const weeklyWorkouts = useMemo(() => last8Weeks.map(({ wStart, wEnd, label }) => {
-        const weekW = workouts.filter(w => { const d = new Date(w.date); return d >= wStart && d <= wEnd; });
+        const weekW = workouts.filter(w => {
+            const d = new Date(w.date + 'T00:00:00');
+            return d >= wStart && d <= wEnd && w.date >= rangeStart && w.date <= rangeEnd;
+        });
         return { label, count: weekW.length, duration: weekW.reduce((s, w) => s + (w.duration_min || 0), 0), calories: weekW.reduce((s, w) => s + (w.calories_burned || 0), 0) };
-    }), [last8Weeks, workouts]);
+    }), [last8Weeks, workouts, rangeStart, rangeEnd]);
 
-    const weightData = useMemo(() =>
-        [...weightLogs].sort((a, b) => new Date(a.date) - new Date(b.date))
+    const filteredWeightData = useMemo(() =>
+        [...weightLogs]
+            .filter(w => w.date >= rangeStart && w.date <= rangeEnd)
+            .sort((a, b) => new Date(a.date) - new Date(b.date))
             .map(w => ({ date: format(new Date(w.date), 'MMM d'), weight: w.weight_kg })),
-        [weightLogs]);
+        [weightLogs, rangeStart, rangeEnd]);
 
     const avgCal = dailyData.filter(d => d.calories > 0).reduce((s, d) => s + d.calories, 0) / (dailyData.filter(d => d.calories > 0).length || 1);
     const avgSteps = dailyData.filter(d => d.steps > 0).reduce((s, d) => s + d.steps, 0) / (dailyData.filter(d => d.steps > 0).length || 1);
-    const totalWorkouts = workouts.length;
-    const weightChange = weightData.length >= 2 ? (weightData[weightData.length - 1].weight - weightData[0].weight).toFixed(1) : null;
+    const totalWorkouts = workouts.filter(w => w.date >= rangeStart && w.date <= rangeEnd).length;
+    const weightChange = filteredWeightData.length >= 2 ? (filteredWeightData[filteredWeightData.length - 1].weight - filteredWeightData[0].weight).toFixed(1) : null;
 
     const radarData = [
         { subject: 'Nutrition', score: Math.min(Math.round(avgCal / (profile?.daily_calorie_target || 2000) * 100), 100) },
@@ -88,10 +111,36 @@ export default function Analytics() {
 
     return (
         <div className="space-y-6">
-            <h1 className="text-2xl font-space font-bold flex items-center gap-3">
-                <BarChart3 className="w-7 h-7 text-blue-400" /> Progress Analytics
-                <span className="text-xs text-muted-foreground font-normal ml-2">Drag ↕ bottom edge to resize · sizes saved automatically</span>
-            </h1>
+            <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                    <h1 className="text-2xl font-space font-bold flex items-center gap-3">
+                        <BarChart3 className="w-7 h-7 text-blue-400" /> Progress Analytics
+                    </h1>
+                    <p className="text-xs text-muted-foreground mt-0.5">Drag ↕ bottom edge to resize · sizes saved automatically</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap">
+                    {[7, 14, 30, 60].map(r => (
+                        <button key={r} onClick={() => { setRange(r); setUseCustom(false); }}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                            {r}d
+                        </button>
+                    ))}
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
+                        <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
+                        <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                        <span className="text-xs text-muted-foreground">–</span>
+                        <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                        {customFrom && customTo && (
+                            <button onClick={() => setUseCustom(true)}
+                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-muted-foreground border border-white/10 hover:border-blue-500/30 hover:text-blue-300'}`}>
+                                Apply
+                            </button>
+                        )}
+                    </div>
+                </div>
+            </div>
 
             {/* Summary Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -120,10 +169,10 @@ export default function Analytics() {
 
             {/* Weight + Radar — resizable */}
             <div className="grid lg:grid-cols-2 gap-6">
-                <PersistentResizable widgetId="analytics_weight" savedSize={getSavedSize('analytics_weight')} onSizeChange={handleSizeChange} defaultHeight={240} title="Weight Trend" icon={Scale} accentColor="#3b82f6">
-                    {(height) => weightData.length > 0 ? (
+                <PersistentResizable widgetId="analytics_weight" savedSize={getSavedSize('analytics_weight')} onSizeChange={handleSizeChange} defaultHeight={240} title={`Weight Trend (${rangeLabel})`} icon={Scale} accentColor="#3b82f6">
+                    {(height) => filteredWeightData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={height || 200}>
-                            <LineChart data={weightData}>
+                            <LineChart data={filteredWeightData}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                                 <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={11} />
                                 <YAxis domain={['auto', 'auto']} stroke="rgba(255,255,255,0.3)" fontSize={11} />
@@ -172,7 +221,7 @@ export default function Analytics() {
             </PersistentResizable>
 
             <div className="grid lg:grid-cols-2 gap-6">
-                <PersistentResizable widgetId="analytics_calories" savedSize={getSavedSize('analytics_calories')} onSizeChange={handleSizeChange} defaultHeight={220} title="Calories (14 days)" icon={Flame} accentColor="#22c55e">
+                <PersistentResizable widgetId="analytics_calories" savedSize={getSavedSize('analytics_calories')} onSizeChange={handleSizeChange} defaultHeight={220} title={`Calories (${rangeLabel})`} icon={Flame} accentColor="#22c55e">
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <AreaChart data={dailyData}>
@@ -193,7 +242,7 @@ export default function Analytics() {
                     )}
                 </PersistentResizable>
 
-                <PersistentResizable widgetId="analytics_steps" savedSize={getSavedSize('analytics_steps')} onSizeChange={handleSizeChange} defaultHeight={220} title="Steps (14 days)" icon={Footprints} accentColor="#f97316">
+                <PersistentResizable widgetId="analytics_steps" savedSize={getSavedSize('analytics_steps')} onSizeChange={handleSizeChange} defaultHeight={220} title={`Steps (${rangeLabel})`} icon={Footprints} accentColor="#f97316">
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <BarChart data={dailyData}>
@@ -208,7 +257,7 @@ export default function Analytics() {
                     )}
                 </PersistentResizable>
 
-                <PersistentResizable widgetId="analytics_hydration" savedSize={getSavedSize('analytics_hydration')} onSizeChange={handleSizeChange} defaultHeight={220} title="Hydration (14 days)" icon={Droplets} accentColor="#3b82f6">
+                <PersistentResizable widgetId="analytics_hydration" savedSize={getSavedSize('analytics_hydration')} onSizeChange={handleSizeChange} defaultHeight={220} title={`Hydration (${rangeLabel})`} icon={Droplets} accentColor="#3b82f6">
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <AreaChart data={dailyData}>
@@ -228,7 +277,7 @@ export default function Analytics() {
                     )}
                 </PersistentResizable>
 
-                <PersistentResizable widgetId="analytics_sleep" savedSize={getSavedSize('analytics_sleep')} onSizeChange={handleSizeChange} defaultHeight={220} title="Sleep Quality (14 days)" icon={Moon} accentColor="#a855f7">
+                <PersistentResizable widgetId="analytics_sleep" savedSize={getSavedSize('analytics_sleep')} onSizeChange={handleSizeChange} defaultHeight={220} title={`Sleep Quality (${rangeLabel})`} icon={Moon} accentColor="#a855f7">
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <BarChart data={dailyData}>
@@ -248,7 +297,7 @@ export default function Analytics() {
                 </PersistentResizable>
 
                 {/* Protein trend */}
-                <PersistentResizable widgetId="analytics_protein" savedSize={getSavedSize('analytics_protein')} onSizeChange={handleSizeChange} defaultHeight={220} title="Protein Intake (14 days)" icon={Flame} accentColor="#22c55e">
+                <PersistentResizable widgetId="analytics_protein" savedSize={getSavedSize('analytics_protein')} onSizeChange={handleSizeChange} defaultHeight={220} title={`Protein Intake (${rangeLabel})`} icon={Flame} accentColor="#22c55e">
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <AreaChart data={dailyData}>
@@ -288,5 +337,3 @@ export default function Analytics() {
         </div>
     );
 }
-
-

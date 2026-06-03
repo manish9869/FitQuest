@@ -40,7 +40,7 @@ export default function DashboardLayout() {
             return acc;
         }, {});
 
-    const groupOrder = ['Overview', 'Tracking', 'Growth', 'Tools'];
+    const groupOrder = ['Overview', 'Tracking', 'Growth', 'Tools', 'Library'];
 
     // ── Don't show lock until we actually know the user's plan ───────────────
     // If profile is still loading, treat everything as accessible to avoid

@@ -18,8 +18,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
     ArrowLeft, User, Target, FileText, MessageSquare, Loader2,
-    Scale, Moon, Dumbbell, Pill, Activity, Trophy, Utensils,
-    Camera, CalendarRange, ChevronLeft, ChevronRight, Zap
+    Scale, Moon, Dumbbell, Pill, Activity, Flame, Star,
+    Trophy, Utensils, Camera, CalendarRange, ChevronLeft, ChevronRight, Zap
 } from 'lucide-react';
 import UserTasksWidget from '@/pages/admin/UserTasksWidget';
 import { toast } from 'sonner';
@@ -145,18 +145,19 @@ export default function AdminUserDetail() {
     const rangeLabel = (d) => format(parseISO(d), chartDays <= 31 ? 'MMM d' : 'MMM d');
 
     // ── Data queries ──────────────────────────────────────────────────────────
+    // FIX: use entities.UserProfile.list() not entities.User.list()
     const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => entities.UserProfile.list() });
     const targetUser = allUsers.find(u => u.id === userId);
+    // FIX: use targetUser.user_email not targetUser.email
     const email = targetUser?.user_email;
     const qOpts = { enabled: !!email };
 
-    // Master achievements table — keyed by achievement_id AND id AND name
+    // Master achievements table
     const { data: masterAchievements = [] } = useQuery({
         queryKey: ['achievements-master'],
         queryFn: () => entities.Achievement.list(),
         staleTime: 300000,
     });
-    // Also fetch challenges so we can resolve challenge UUIDs
     const { data: masterChallenges = [] } = useQuery({
         queryKey: ['challenges-master'],
         queryFn: () => entities.Challenge.list(),
@@ -188,7 +189,6 @@ export default function AdminUserDetail() {
         return map;
     }, [masterAchievements]);
 
-    // Challenge lookup by id or name
     const challengeLookup = useMemo(() => {
         const map = {};
         masterChallenges.forEach(c => {
@@ -198,23 +198,18 @@ export default function AdminUserDetail() {
         return map;
     }, [masterChallenges]);
 
-    // Resolve a raw achievement string to display info
     const resolveAchievement = (raw) => {
-        // 1. Try achievements table
         const a = achievementLookup[raw] || achievementLookup[raw?.toLowerCase?.()];
         if (a) return { name: a.name, icon: a.icon || '🏅', color: a.color || 'yellow', xp: a.xp_reward };
 
-        // 2. Try challenges table (UUIDs stored in achievements array)
         const c = challengeLookup[raw] || challengeLookup[raw?.toLowerCase?.()];
         if (c) return { name: `${c.name}`, icon: '🏆', color: 'orange', xp: null };
 
-        // 3. It's a known short string like "xp_500" — humanise it
         if (raw && !raw.includes('-')) {
             const pretty = raw.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             return { name: pretty, icon: '⭐', color: 'yellow', xp: null };
         }
 
-        // 4. Absolute fallback for unresolvable UUIDs — skip rendering
         return null;
     };
 
@@ -254,12 +249,23 @@ export default function AdminUserDetail() {
     const dayWeight = useMemo(() => weightLogs.filter(l => l.date === selectedDay), [weightLogs, selectedDay]);
     const dayProgress = useMemo(() => bodyProgress.filter(b => b.date === selectedDay), [bodyProgress, selectedDay]);
 
-    // ── KPI summaries (last 7 days always, independent of filters) ───────────
+    // ── KPI summaries (last 7 days always) ───────────────────────────────────
     const last7start = format(subDays(new Date(), 6), 'yyyy-MM-dd');
     const workouts7 = workouts.filter(w => w.date >= last7start).length;
-    const avgCal7 = useMemo(() => { const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')); const t = d.reduce((s, dt) => s + meals.filter(m => m.date === dt).reduce((ss, m) => ss + (m.calories || 0), 0), 0); return Math.round(t / 7); }, [meals]);
-    const avgSleep7 = useMemo(() => { const r = sleepLogs.filter(s => s.date >= last7start); return r.length ? (r.reduce((s, sl) => s + (sl.hours || 0), 0) / r.length).toFixed(1) : '—'; }, [sleepLogs]);
-    const avgSteps7 = useMemo(() => { const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')); const t = d.reduce((s, dt) => s + stepLogs.filter(st => st.date === dt).reduce((ss, st) => ss + (st.steps || 0), 0), 0); return Math.round(t / 7); }, [stepLogs]);
+    const avgCal7 = useMemo(() => {
+        const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd'));
+        const t = d.reduce((s, dt) => s + meals.filter(m => m.date === dt).reduce((ss, m) => ss + (m.calories || 0), 0), 0);
+        return Math.round(t / 7);
+    }, [meals]);
+    const avgSleep7 = useMemo(() => {
+        const r = sleepLogs.filter(s => s.date >= last7start);
+        return r.length ? (r.reduce((s, sl) => s + (sl.hours || 0), 0) / r.length).toFixed(1) : '—';
+    }, [sleepLogs]);
+    const avgSteps7 = useMemo(() => {
+        const d = Array.from({ length: 7 }, (_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd'));
+        const t = d.reduce((s, dt) => s + stepLogs.filter(st => st.date === dt).reduce((ss, st) => ss + (st.steps || 0), 0), 0);
+        return Math.round(t / 7);
+    }, [stepLogs]);
     const latestWeight = [...weightLogs].sort((a, b) => b.date.localeCompare(a.date))[0];
     const streak = profile?.login_streak || 0;
     const status = streak > 3 ? 'Active' : streak > 0 ? 'At Risk' : 'Inactive';
@@ -293,7 +299,8 @@ export default function AdminUserDetail() {
         { id: 'sleep', label: 'Sleep', icon: Moon },
         { id: 'supplements', label: 'Supplements', icon: Pill },
         { id: 'plans', label: 'Plans & Notes', icon: FileText },
-        { id: 'body_progress', label: 'Body Progress', icon: Camera }, { id: 'tasks', label: 'Tasks', icon: Zap },
+        { id: 'body_progress', label: 'Body Progress', icon: Camera },
+        { id: 'tasks', label: 'Tasks', icon: Zap },
     ];
 
     // Tabs that use the day picker for log tables
@@ -301,6 +308,7 @@ export default function AdminUserDetail() {
     // Tabs that show charts (use chart range)
     const CHART_TABS = ['overview', 'nutrition', 'activity', 'weight', 'sleep'];
 
+    // FIX: use user_email not email for display
     const displayName = targetUser.user_email?.split('@')[0] || targetUser.user_email;
 
     // ── Achievement badge renderer ─────────────────────────────────────────────
@@ -487,18 +495,37 @@ export default function AdminUserDetail() {
                             </div>
                         </GlassCard>
                         <GlassCard animate={false}>
-                            <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements</h3>
-                            <AchievementBadges />
-                            <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-3 text-center">
-                                <div>
-                                    <div className="text-xl font-bold text-yellow-400">{profile?.total_xp?.toLocaleString() || 0}</div>
-                                    <div className="text-xs text-muted-foreground">Total XP</div>
+                            <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements & XP</h3>
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                                    <Zap className="w-4 h-4 text-yellow-400 mx-auto mb-1" />
+                                    <div className="text-2xl font-black text-yellow-400 font-space">{(profile?.total_xp || 0).toLocaleString()}</div>
+                                    <div className="text-[10px] text-yellow-400/60 uppercase tracking-wide">Total XP</div>
                                 </div>
-                                <div>
-                                    <div className="text-xl font-bold text-orange-400">{profile?.longest_streak || 0}</div>
-                                    <div className="text-xs text-muted-foreground">Best Streak</div>
+                                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)' }}>
+                                    <Flame className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                                    <div className="text-2xl font-black text-orange-400 font-space">{profile?.longest_streak || 0}</div>
+                                    <div className="text-[10px] text-orange-400/60 uppercase tracking-wide">Best Streak</div>
                                 </div>
                             </div>
+                            {(!profile?.achievements || profile.achievements.length === 0) ? (
+                                <div className="text-center py-6">
+                                    <Trophy className="w-10 h-10 mx-auto mb-2 text-muted-foreground/20" />
+                                    <p className="text-sm text-muted-foreground italic">No achievements yet.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                                    {profile.achievements.map((a, i) => (
+                                        <div key={a} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0" style={{ background: 'rgba(245,158,11,0.15)' }}>
+                                                🏆
+                                            </div>
+                                            <span className="text-sm text-yellow-300 font-medium">{a.replace(/_/g, ' ')}</span>
+                                            <Star className="w-3 h-3 text-yellow-500/50 ml-auto flex-shrink-0" />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </GlassCard>
                     </div>
                     <div className="grid lg:grid-cols-2 gap-5">
@@ -857,6 +884,7 @@ export default function AdminUserDetail() {
                                     <div key={note.id} className="glass rounded-xl p-4 border border-white/5">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${note.category === 'motivation' ? 'bg-emerald-500/10 text-emerald-400' : note.category === 'warning' ? 'bg-yellow-500/10 text-yellow-400' : note.category === 'intervention' ? 'bg-red-500/10 text-red-400' : note.category === 'progress' ? 'bg-blue-500/10 text-blue-400' : 'bg-white/10 text-muted-foreground'}`}>{note.category}</span>
+                                            {/* FIX: use note.created_at not note.created_date */}
                                             <span className="text-xs text-muted-foreground">{note.created_at ? format(new Date(note.created_at), 'MMM d') : ''}</span>
                                         </div>
                                         <p className="text-sm">{note.note}</p>
@@ -867,7 +895,6 @@ export default function AdminUserDetail() {
                     </GlassCard>
                 </div>
             )}
-
 
             {/* ══════════════ TASKS ══════════════ */}
             {activeTab === 'tasks' && (
