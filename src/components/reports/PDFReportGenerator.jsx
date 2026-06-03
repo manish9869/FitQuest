@@ -10,21 +10,9 @@ import {
     AreaChart, Area, BarChart, Bar, LineChart, Line,
     XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine
 } from 'recharts';
+import html2canvas from 'html2canvas';
 
-// ------ small inline progress bar ------
-const Bar2 = ({ value, max, color }) => {
-    const pct = Math.min(100, max > 0 ? Math.round((value / max) * 100) : 0);
-    return (
-        <div className="flex items-center gap-2">
-            <div className="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: color }} />
-            </div>
-            <span className="text-[10px] text-white/60 w-8 text-right">{pct}%</span>
-        </div>
-    );
-};
-
-// ---- the actual printable report (hidden div we print from) ----
+// ---- the actual printable report (light theme) ----
 const PrintableReport = React.forwardRef(({ data, profile, dateLabel }, ref) => {
     const { meals, water, steps, workouts, sleep, weight } = data;
 
@@ -38,6 +26,7 @@ const PrintableReport = React.forwardRef(({ data, profile, dateLabel }, ref) => 
     const latestWeight = [...weight].sort((a, b) => b.date?.localeCompare(a.date))[0];
     const daysCount = data.dateRange.length || 7;
     const activeDays = data.dateRange.filter(d => workouts.some(w => w.date === d) || steps.some(s => s.date === d && s.steps > 3000)).length;
+    const consistencyScore = Math.round((activeDays / Math.max(daysCount, 1)) * 100);
 
     const nutritionChart = data.dateRange.map(d => ({
         day: format(new Date(d), 'MMM d'),
@@ -56,187 +45,190 @@ const PrintableReport = React.forwardRef(({ data, profile, dateLabel }, ref) => 
     const weightChart = [...weight].sort((a, b) => a.date?.localeCompare(b.date))
         .map(l => ({ day: format(parseISO(l.date), 'MMM d'), weight: l.weight_kg }));
 
-    const consistencyScore = Math.round((activeDays / Math.max(daysCount, 1)) * 100);
+    const scoreColor = consistencyScore >= 70 ? '#16a34a' : consistencyScore >= 40 ? '#d97706' : '#dc2626';
+
+    // Light-theme chart props
+    const axisProps = { stroke: '#94a3b8', fontSize: 9, tick: { fontSize: 9, fill: '#64748b' }, tickLine: false, axisLine: false };
+    const gridProps = { strokeDasharray: '3 3', stroke: '#e2e8f0' };
+    const tooltipStyle = { background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 11, color: '#1e293b' };
 
     return (
-        <div ref={ref} style={{ fontFamily: 'Inter, sans-serif', background: '#0a0f16', color: '#f0f0f0', padding: '40px', minWidth: 900 }}>
+        <div ref={ref} style={{ fontFamily: 'Inter, Arial, sans-serif', background: '#ffffff', color: '#1e293b', padding: '40px', minWidth: 900 }}>
             {/* Header */}
-            <div style={{ background: 'linear-gradient(135deg, #0d2a1a 0%, #0a1628 50%, #1a0d28 100%)', borderRadius: 20, padding: '32px 40px', marginBottom: 32, border: '1px solid rgba(255,255,255,0.08)' }}>
+            <div style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #eff6ff 60%, #faf5ff 100%)', borderRadius: 16, padding: '28px 36px', marginBottom: 28, border: '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                     <div>
-                        <div style={{ fontSize: 11, letterSpacing: 3, color: '#4ade80', textTransform: 'uppercase', marginBottom: 8 }}>FitElite Performance Report</div>
-                        <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 6, background: 'linear-gradient(90deg, #4ade80, #3b82f6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                        <div style={{ fontSize: 10, letterSpacing: 3, color: '#16a34a', textTransform: 'uppercase', marginBottom: 6, fontWeight: 700 }}>FitElite Performance Report</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 4, color: '#0f172a' }}>
                             {profile?.user_email?.split('@')[0] || 'Athlete'}
                         </div>
-                        <div style={{ color: '#94a3b8', fontSize: 14 }}>{dateLabel}</div>
+                        <div style={{ color: '#64748b', fontSize: 13 }}>{dateLabel}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 4 }}>Consistency Score</div>
-                        <div style={{ fontSize: 48, fontWeight: 900, color: consistencyScore >= 70 ? '#4ade80' : consistencyScore >= 40 ? '#f59e0b' : '#ef4444', lineHeight: 1 }}>{consistencyScore}%</div>
-                        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>{activeDays}/{daysCount} active days</div>
+                        <div style={{ fontSize: 10, color: '#64748b', marginBottom: 2, fontWeight: 600 }}>Consistency Score</div>
+                        <div style={{ fontSize: 44, fontWeight: 900, color: scoreColor, lineHeight: 1 }}>{consistencyScore}%</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{activeDays}/{daysCount} active days</div>
                     </div>
                 </div>
             </div>
 
-            {/* KPI Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+            {/* KPI row 1 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 14 }}>
                 {[
-                    { label: 'Total Calories', value: totalCal.toLocaleString(), unit: 'kcal', color: '#4ade80', bg: '#0d2a1a' },
-                    { label: 'Total Steps', value: totalSteps.toLocaleString(), unit: 'steps', color: '#f97316', bg: '#1f1006' },
-                    { label: 'Water Intake', value: (totalWater / 1000).toFixed(1), unit: 'L total', color: '#06b6d4', bg: '#06151a' },
-                    { label: 'Workouts', value: workouts.length, unit: 'sessions', color: '#a855f7', bg: '#180f28' },
+                    { label: 'Total Calories', value: totalCal.toLocaleString(), unit: 'kcal', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+                    { label: 'Total Steps', value: totalSteps.toLocaleString(), unit: 'steps', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
+                    { label: 'Water Intake', value: (totalWater / 1000).toFixed(1), unit: 'L total', color: '#0891b2', bg: '#ecfeff', border: '#a5f3fc' },
+                    { label: 'Workouts', value: workouts.length, unit: 'sessions', color: '#7c3aed', bg: '#faf5ff', border: '#ddd6fe' },
                 ].map(k => (
-                    <div key={k.label} style={{ background: k.bg, border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '20px 24px' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{k.label}</div>
-                        <div style={{ fontSize: 30, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{k.unit}</div>
+                    <div key={k.label} style={{ background: k.bg, border: `1px solid ${k.border}`, borderRadius: 12, padding: '16px 20px' }}>
+                        <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>{k.label}</div>
+                        <div style={{ fontSize: 26, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{k.unit}</div>
                     </div>
                 ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 32 }}>
+            {/* KPI row 2 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 24 }}>
                 {[
-                    { label: 'Avg Daily Cal', value: Math.round(totalCal / Math.max(daysCount, 1)).toLocaleString(), unit: 'kcal/day', color: '#4ade80', bg: '#0d2a1a' },
-                    { label: 'Avg Daily Steps', value: Math.round(totalSteps / Math.max(daysCount, 1)).toLocaleString(), unit: 'steps/day', color: '#f97316', bg: '#1f1006' },
-                    { label: 'Avg Sleep', value: avgSleep, unit: 'hours/night', color: '#3b82f6', bg: '#06111a' },
-                    { label: 'Current Weight', value: latestWeight?.weight_kg || '—', unit: 'kg', color: '#f59e0b', bg: '#1a1006' },
+                    { label: 'Avg Daily Cal', value: Math.round(totalCal / Math.max(daysCount, 1)).toLocaleString(), unit: 'kcal/day', color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0' },
+                    { label: 'Avg Daily Steps', value: Math.round(totalSteps / Math.max(daysCount, 1)).toLocaleString(), unit: 'steps/day', color: '#ea580c', bg: '#fff7ed', border: '#fed7aa' },
+                    { label: 'Avg Sleep', value: avgSleep, unit: 'hours/night', color: '#2563eb', bg: '#eff6ff', border: '#bfdbfe' },
+                    { label: 'Current Weight', value: latestWeight?.weight_kg || '—', unit: 'kg', color: '#d97706', bg: '#fffbeb', border: '#fde68a' },
                 ].map(k => (
-                    <div key={k.label} style={{ background: k.bg, border: '1px solid rgba(255,255,255,0.07)', borderRadius: 16, padding: '20px 24px' }}>
-                        <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>{k.label}</div>
-                        <div style={{ fontSize: 30, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
-                        <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{k.unit}</div>
+                    <div key={k.label} style={{ background: k.bg, border: `1px solid ${k.border}`, borderRadius: 12, padding: '16px 20px' }}>
+                        <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1, fontWeight: 600 }}>{k.label}</div>
+                        <div style={{ fontSize: 26, fontWeight: 800, color: k.color, lineHeight: 1 }}>{k.value}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{k.unit}</div>
                     </div>
                 ))}
             </div>
 
             {/* Nutrition Chart */}
-            <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px', marginBottom: 24 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', marginBottom: 4, letterSpacing: 1, textTransform: 'uppercase' }}>📊 Nutrition Trend</div>
-                <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Daily calories & protein over the report period</div>
-                <ResponsiveContainer width="100%" height={180}>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 1 }}>📊 Nutrition Trend</div>
+                <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Daily calories & protein</div>
+                <ResponsiveContainer width="100%" height={160}>
                     <AreaChart data={nutritionChart}>
                         <defs>
-                            <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#4ade80" stopOpacity={0.4} /><stop offset="100%" stopColor="#4ade80" stopOpacity={0} /></linearGradient>
-                            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.3} /><stop offset="100%" stopColor="#3b82f6" stopOpacity={0} /></linearGradient>
+                            <linearGradient id="cg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#16a34a" stopOpacity={0.25} /><stop offset="100%" stopColor="#16a34a" stopOpacity={0} /></linearGradient>
+                            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2563eb" stopOpacity={0.2} /><stop offset="100%" stopColor="#2563eb" stopOpacity={0} /></linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis dataKey="day" stroke="rgba(255,255,255,0.2)" fontSize={10} tick={{ fontSize: 9 }} />
-                        <YAxis stroke="rgba(255,255,255,0.2)" fontSize={10} />
-                        <Tooltip contentStyle={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }} />
-                        {profile?.daily_calorie_target && <ReferenceLine y={profile.daily_calorie_target} stroke="#f59e0b" strokeDasharray="4 4" />}
-                        <Area type="monotone" dataKey="calories" name="Calories" stroke="#4ade80" fill="url(#cg)" strokeWidth={2} dot={false} />
-                        <Area type="monotone" dataKey="protein" name="Protein (g)" stroke="#3b82f6" fill="url(#pg)" strokeWidth={1.5} dot={false} />
+                        <CartesianGrid {...gridProps} />
+                        <XAxis dataKey="day" {...axisProps} />
+                        <YAxis {...axisProps} />
+                        <Tooltip contentStyle={tooltipStyle} />
+                        {profile?.daily_calorie_target && <ReferenceLine y={profile.daily_calorie_target} stroke="#d97706" strokeDasharray="4 4" />}
+                        <Area type="monotone" dataKey="calories" name="Calories" stroke="#16a34a" fill="url(#cg)" strokeWidth={2} dot={false} />
+                        <Area type="monotone" dataKey="protein" name="Protein (g)" stroke="#2563eb" fill="url(#pg)" strokeWidth={1.5} dot={false} />
                     </AreaChart>
                 </ResponsiveContainer>
-                {/* Macro summary */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginTop: 16 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginTop: 14 }}>
                     {[
-                        { label: 'Calories', value: `${totalCal.toLocaleString()} kcal`, color: '#4ade80' },
-                        { label: 'Protein', value: `${Math.round(totalProt)}g`, color: '#3b82f6' },
-                        { label: 'Carbs', value: `${Math.round(totalCarbs)}g`, color: '#a855f7' },
-                        { label: 'Fats', value: `${Math.round(totalFat)}g`, color: '#f97316' },
+                        { label: 'Calories', value: `${totalCal.toLocaleString()} kcal`, color: '#16a34a' },
+                        { label: 'Protein', value: `${Math.round(totalProt)}g`, color: '#2563eb' },
+                        { label: 'Carbs', value: `${Math.round(totalCarbs)}g`, color: '#7c3aed' },
+                        { label: 'Fats', value: `${Math.round(totalFat)}g`, color: '#ea580c' },
                     ].map(m => (
-                        <div key={m.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 10, padding: '10px 14px', textAlign: 'center' }}>
-                            <div style={{ color: m.color, fontWeight: 700, fontSize: 16 }}>{m.value}</div>
-                            <div style={{ color: '#64748b', fontSize: 11 }}>{m.label}</div>
+                        <div key={m.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 12px', textAlign: 'center' }}>
+                            <div style={{ color: m.color, fontWeight: 700, fontSize: 15 }}>{m.value}</div>
+                            <div style={{ color: '#94a3b8', fontSize: 10 }}>{m.label}</div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Steps + Water Chart */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#f97316', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>👟 Steps Activity</div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Total: {totalSteps.toLocaleString()} · ~{Math.round(totalSteps * 0.0008)} km</div>
-                    <ResponsiveContainer width="100%" height={140}>
+            {/* Steps + Water */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#ea580c', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 1 }}>👟 Steps</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Total: {totalSteps.toLocaleString()} · ~{Math.round(totalSteps * 0.0008)} km</div>
+                    <ResponsiveContainer width="100%" height={130}>
                         <BarChart data={activityChart}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="day" stroke="rgba(255,255,255,0.2)" fontSize={9} tick={{ fontSize: 9 }} />
-                            <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} />
-                            <Tooltip contentStyle={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }} />
-                            {profile?.step_goal && <ReferenceLine y={profile.step_goal} stroke="#f59e0b" strokeDasharray="3 3" />}
-                            <Bar dataKey="steps" name="Steps" fill="#f97316" radius={[4, 4, 0, 0]} opacity={0.9} />
+                            <CartesianGrid {...gridProps} />
+                            <XAxis dataKey="day" {...axisProps} />
+                            <YAxis {...axisProps} />
+                            <Tooltip contentStyle={tooltipStyle} />
+                            {profile?.step_goal && <ReferenceLine y={profile.step_goal} stroke="#d97706" strokeDasharray="3 3" />}
+                            <Bar dataKey="steps" name="Steps" fill="#ea580c" radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#06b6d4', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>💧 Hydration</div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Total: {(totalWater / 1000).toFixed(1)}L · Avg: {Math.round(totalWater / Math.max(daysCount, 1))}ml/day</div>
-                    <ResponsiveContainer width="100%" height={140}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0891b2', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 1 }}>💧 Hydration</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Total: {(totalWater / 1000).toFixed(1)}L · Avg: {Math.round(totalWater / Math.max(daysCount, 1))}ml/day</div>
+                    <ResponsiveContainer width="100%" height={130}>
                         <AreaChart data={activityChart}>
-                            <defs><linearGradient id="wg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#06b6d4" stopOpacity={0.4} /><stop offset="100%" stopColor="#06b6d4" stopOpacity={0} /></linearGradient></defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="day" stroke="rgba(255,255,255,0.2)" fontSize={9} tick={{ fontSize: 9 }} />
-                            <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} />
-                            <Tooltip contentStyle={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }} />
-                            {profile?.water_goal_ml && <ReferenceLine y={profile.water_goal_ml} stroke="#f59e0b" strokeDasharray="3 3" />}
-                            <Area type="monotone" dataKey="water" name="Water (ml)" stroke="#06b6d4" fill="url(#wg2)" strokeWidth={2} dot={false} />
+                            <defs><linearGradient id="wg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#0891b2" stopOpacity={0.25} /><stop offset="100%" stopColor="#0891b2" stopOpacity={0} /></linearGradient></defs>
+                            <CartesianGrid {...gridProps} />
+                            <XAxis dataKey="day" {...axisProps} />
+                            <YAxis {...axisProps} />
+                            <Tooltip contentStyle={tooltipStyle} />
+                            {profile?.water_goal_ml && <ReferenceLine y={profile.water_goal_ml} stroke="#d97706" strokeDasharray="3 3" />}
+                            <Area type="monotone" dataKey="water" name="Water (ml)" stroke="#0891b2" fill="url(#wg2)" strokeWidth={2} dot={false} />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
             </div>
 
             {/* Sleep + Weight */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#3b82f6', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>🌙 Sleep Quality</div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>Avg: {avgSleep}h per night · {sleep.length} nights logged</div>
-                    <ResponsiveContainer width="100%" height={140}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#2563eb', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 1 }}>🌙 Sleep</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Avg: {avgSleep}h · {sleep.length} nights logged</div>
+                    <ResponsiveContainer width="100%" height={130}>
                         <BarChart data={sleepChart}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                            <XAxis dataKey="day" stroke="rgba(255,255,255,0.2)" fontSize={9} tick={{ fontSize: 9 }} />
-                            <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} domain={[0, 10]} />
-                            <Tooltip contentStyle={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }} />
-                            <ReferenceLine y={8} stroke="#4ade80" strokeDasharray="3 3" />
-                            <Bar dataKey="hours" name="Sleep (h)" fill="#3b82f6" radius={[4, 4, 0, 0]} opacity={0.9} />
+                            <CartesianGrid {...gridProps} />
+                            <XAxis dataKey="day" {...axisProps} />
+                            <YAxis {...axisProps} domain={[0, 10]} />
+                            <Tooltip contentStyle={tooltipStyle} />
+                            <ReferenceLine y={8} stroke="#16a34a" strokeDasharray="3 3" />
+                            <Bar dataKey="hours" name="Sleep (h)" fill="#2563eb" radius={[4, 4, 0, 0]} opacity={0.85} />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px' }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#f59e0b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 1 }}>⚖️ Weight Progress</div>
-                    <div style={{ fontSize: 12, color: '#64748b', marginBottom: 16 }}>
-                        Current: {latestWeight?.weight_kg || '—'}kg · Target: {profile?.target_weight_kg || '—'}kg
-                    </div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#d97706', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 1 }}>⚖️ Weight Progress</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 14 }}>Current: {latestWeight?.weight_kg || '—'}kg · Target: {profile?.target_weight_kg || '—'}kg</div>
                     {weightChart.length >= 2 ? (
-                        <ResponsiveContainer width="100%" height={140}>
+                        <ResponsiveContainer width="100%" height={130}>
                             <LineChart data={weightChart}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                                <XAxis dataKey="day" stroke="rgba(255,255,255,0.2)" fontSize={9} tick={{ fontSize: 9 }} />
-                                <YAxis stroke="rgba(255,255,255,0.2)" fontSize={9} domain={['auto', 'auto']} />
-                                <Tooltip contentStyle={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 11 }} />
-                                {profile?.target_weight_kg && <ReferenceLine y={profile.target_weight_kg} stroke="#f59e0b" strokeDasharray="4 4" />}
-                                <Line type="monotone" dataKey="weight" name="Weight (kg)" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: '#f59e0b', r: 3 }} />
+                                <CartesianGrid {...gridProps} />
+                                <XAxis dataKey="day" {...axisProps} />
+                                <YAxis {...axisProps} domain={['auto', 'auto']} />
+                                <Tooltip contentStyle={tooltipStyle} />
+                                {profile?.target_weight_kg && <ReferenceLine y={profile.target_weight_kg} stroke="#d97706" strokeDasharray="4 4" />}
+                                <Line type="monotone" dataKey="weight" name="Weight (kg)" stroke="#d97706" strokeWidth={2.5} dot={{ fill: '#d97706', r: 3 }} />
                             </LineChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div style={{ height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontSize: 13 }}>Not enough data</div>
+                        <div style={{ height: 130, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: 13 }}>Not enough data</div>
                     )}
                 </div>
             </div>
 
             {/* Workout Log */}
             {workouts.length > 0 && (
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px', marginBottom: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#a855f7', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>🏋️ Workout Log</div>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#7c3aed', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1 }}>🏋️ Workout Log</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                            <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                                 {['Date', 'Name', 'Type', 'Duration', 'Calories', 'Intensity'].map(h => (
-                                    <th key={h} style={{ textAlign: 'left', padding: '8px 12px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase', fontSize: 10, letterSpacing: 1 }}>{h}</th>
+                                    <th key={h} style={{ textAlign: 'left', padding: '7px 10px', color: '#64748b', fontWeight: 700, textTransform: 'uppercase', fontSize: 10, letterSpacing: 1 }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {[...workouts].sort((a, b) => b.date?.localeCompare(a.date)).slice(0, 15).map((w, i) => (
-                                <tr key={w.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'rgba(255,255,255,0.02)' : 'transparent' }}>
-                                    <td style={{ padding: '9px 12px', color: '#94a3b8' }}>{w.date}</td>
-                                    <td style={{ padding: '9px 12px', color: '#f0f0f0', fontWeight: 600 }}>{w.name || '—'}</td>
-                                    <td style={{ padding: '9px 12px', color: '#a855f7' }}>{w.workout_type || '—'}</td>
-                                    <td style={{ padding: '9px 12px', color: '#4ade80' }}>{w.duration_min || 0} min</td>
-                                    <td style={{ padding: '9px 12px', color: '#f97316' }}>{w.calories_burned || 0} kcal</td>
-                                    <td style={{ padding: '9px 12px' }}>
-                                        <span style={{ background: w.intensity === 'high' ? '#7c3aed22' : w.intensity === 'extreme' ? '#dc262622' : '#16a34a22', color: w.intensity === 'high' ? '#a78bfa' : w.intensity === 'extreme' ? '#f87171' : '#4ade80', padding: '2px 8px', borderRadius: 6, fontSize: 10 }}>
+                                <tr key={w.id} style={{ borderBottom: '1px solid #f1f5f9', background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                    <td style={{ padding: '8px 10px', color: '#64748b' }}>{w.date}</td>
+                                    <td style={{ padding: '8px 10px', color: '#0f172a', fontWeight: 600 }}>{w.name || '—'}</td>
+                                    <td style={{ padding: '8px 10px', color: '#7c3aed' }}>{w.workout_type || '—'}</td>
+                                    <td style={{ padding: '8px 10px', color: '#16a34a' }}>{w.duration_min || 0} min</td>
+                                    <td style={{ padding: '8px 10px', color: '#ea580c' }}>{w.calories_burned || 0} kcal</td>
+                                    <td style={{ padding: '8px 10px' }}>
+                                        <span style={{ background: w.intensity === 'high' ? '#ede9fe' : w.intensity === 'extreme' ? '#fee2e2' : '#dcfce7', color: w.intensity === 'high' ? '#7c3aed' : w.intensity === 'extreme' ? '#dc2626' : '#16a34a', padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600 }}>
                                             {w.intensity || 'moderate'}
                                         </span>
                                     </td>
@@ -249,26 +241,26 @@ const PrintableReport = React.forwardRef(({ data, profile, dateLabel }, ref) => 
 
             {/* Goal Progress */}
             {profile && (
-                <div style={{ background: '#0d1520', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '24px', marginBottom: 24 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: '#4ade80', marginBottom: 16, textTransform: 'uppercase', letterSpacing: 1 }}>🎯 Goal Achievement</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 16, padding: '20px 24px', marginBottom: 20 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#16a34a', marginBottom: 14, textTransform: 'uppercase', letterSpacing: 1 }}>🎯 Goal Achievement</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                         {[
-                            { label: 'Daily Calories', current: Math.round(totalCal / Math.max(daysCount, 1)), target: profile.daily_calorie_target, color: '#4ade80', unit: 'kcal' },
-                            { label: 'Daily Protein', current: Math.round(totalProt / Math.max(daysCount, 1)), target: profile.protein_target, color: '#3b82f6', unit: 'g' },
-                            { label: 'Daily Steps', current: Math.round(totalSteps / Math.max(daysCount, 1)), target: profile.step_goal, color: '#f97316', unit: 'steps' },
-                            { label: 'Daily Water', current: Math.round(totalWater / Math.max(daysCount, 1)), target: profile.water_goal_ml, color: '#06b6d4', unit: 'ml' },
+                            { label: 'Daily Calories', current: Math.round(totalCal / Math.max(daysCount, 1)), target: profile.daily_calorie_target, color: '#16a34a', unit: 'kcal' },
+                            { label: 'Daily Protein', current: Math.round(totalProt / Math.max(daysCount, 1)), target: profile.protein_target, color: '#2563eb', unit: 'g' },
+                            { label: 'Daily Steps', current: Math.round(totalSteps / Math.max(daysCount, 1)), target: profile.step_goal, color: '#ea580c', unit: 'steps' },
+                            { label: 'Daily Water', current: Math.round(totalWater / Math.max(daysCount, 1)), target: profile.water_goal_ml, color: '#0891b2', unit: 'ml' },
                         ].filter(g => g.target).map(g => {
                             const pct = Math.min(100, Math.round((g.current / g.target) * 100));
                             return (
-                                <div key={g.label} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: 12, padding: '14px 16px' }}>
+                                <div key={g.label} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 10, padding: '12px 14px' }}>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                                        <span style={{ fontSize: 12, color: '#94a3b8' }}>{g.label}</span>
-                                        <span style={{ fontSize: 12, color: g.color, fontWeight: 600 }}>{pct}%</span>
+                                        <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>{g.label}</span>
+                                        <span style={{ fontSize: 12, color: g.color, fontWeight: 700 }}>{pct}%</span>
                                     </div>
-                                    <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: 999, height: 6, overflow: 'hidden', marginBottom: 6 }}>
+                                    <div style={{ background: '#e2e8f0', borderRadius: 999, height: 6, overflow: 'hidden', marginBottom: 6 }}>
                                         <div style={{ width: `${pct}%`, height: '100%', background: g.color, borderRadius: 999 }} />
                                     </div>
-                                    <div style={{ fontSize: 11, color: '#64748b' }}>Avg {g.current?.toLocaleString()} / {g.target?.toLocaleString()} {g.unit}</div>
+                                    <div style={{ fontSize: 11, color: '#94a3b8' }}>Avg {g.current?.toLocaleString()} / {g.target?.toLocaleString()} {g.unit}</div>
                                 </div>
                             );
                         })}
@@ -277,9 +269,9 @@ const PrintableReport = React.forwardRef(({ data, profile, dateLabel }, ref) => 
             )}
 
             {/* Footer */}
-            <div style={{ textAlign: 'center', padding: '20px', borderTop: '1px solid rgba(255,255,255,0.06)', marginTop: 8 }}>
-                <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600, letterSpacing: 2, textTransform: 'uppercase' }}>FitElite</div>
-                <div style={{ fontSize: 10, color: '#334155', marginTop: 4 }}>Generated on {format(new Date(), 'MMMM d, yyyy')} · Keep pushing your limits 🚀</div>
+            <div style={{ textAlign: 'center', padding: '16px', borderTop: '1px solid #e2e8f0', marginTop: 8 }}>
+                <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, letterSpacing: 2, textTransform: 'uppercase' }}>FitElite</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 3 }}>Generated on {format(new Date(), 'MMMM d, yyyy')} · Keep pushing your limits 🚀</div>
             </div>
         </div>
     );
@@ -305,14 +297,14 @@ export default function PDFReportGenerator({ userEmail, profileData, buttonLabel
     const { data: profiles = [] } = useQuery({ queryKey: ['pdf-profile', email], queryFn: () => entities.UserProfile.filter({ user_email: email }), enabled: !!email && open });
     const profile = profileData || profiles[0];
 
-    const dateRange = React.useMemo(() => {
+    const dateRange = useMemo(() => {
         const from = new Date(fromDate);
         const to = new Date(toDate);
         const days = Math.min(Math.round((to - from) / 86400000) + 1, 180);
         return Array.from({ length: days }, (_, i) => format(new Date(from.getTime() + i * 86400000), 'yyyy-MM-dd'));
     }, [fromDate, toDate]);
 
-    const filteredData = React.useMemo(() => ({
+    const filteredData = useMemo(() => ({
         meals: meals.filter(m => dateRange.includes(m.date)),
         water: water.filter(w => dateRange.includes(w.date)),
         steps: steps.filter(s => dateRange.includes(s.date)),
@@ -326,34 +318,51 @@ export default function PDFReportGenerator({ userEmail, profileData, buttonLabel
 
     const handlePrint = async () => {
         setGenerating(true);
-        await new Promise(r => setTimeout(r, 500)); // let charts render
+        // Wait for charts to fully render
+        await new Promise(r => setTimeout(r, 800));
         try {
             const el = reportRef.current;
             if (!el) return;
+
+            // Capture the report element as a canvas image so charts are visible
+            const canvas = await html2canvas(el, {
+                backgroundColor: '#ffffff',
+                scale: 1.5,
+                useCORS: true,
+                allowTaint: true,
+                logging: false,
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+
             const printWindow = window.open('', '_blank');
             printWindow.document.write(`
         <!DOCTYPE html><html><head>
         <title>FitElite Report - ${email}</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { background: #0a0f16; color: #f0f0f0; font-family: Inter, sans-serif; }
+          body { background: #fff; }
+          img { display: block; width: 100%; height: auto; }
           @media print {
             body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            @page { margin: 0; size: A4 landscape; }
+            @page { margin: 0; }
           }
         </style>
-        </head><body>${el.innerHTML}</body></html>
+        </head><body>
+        <img src="${imgData}" width="${imgWidth}" height="${imgHeight}" />
+        </body></html>
       `);
             printWindow.document.close();
             setTimeout(() => {
                 printWindow.focus();
                 printWindow.print();
                 setGenerating(false);
-                toast.success('Report ready — use your browser\'s Save as PDF option');
-            }, 1200);
-        } catch {
+                toast.success('Report ready — use "Save as PDF" in the print dialog');
+            }, 800);
+        } catch (err) {
+            console.error(err);
             toast.error('Failed to generate report');
             setGenerating(false);
         }
@@ -421,7 +430,7 @@ export default function PDFReportGenerator({ userEmail, profileData, buttonLabel
                         </div>
                     </div>
 
-                    {/* Summary of what will be included */}
+                    {/* Summary stats */}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         {[
                             { label: 'Days', value: dateRange.length, color: 'text-emerald-400' },
@@ -442,8 +451,8 @@ export default function PDFReportGenerator({ userEmail, profileData, buttonLabel
                         <span className="text-sm text-emerald-300 font-medium">{dateLabel}</span>
                     </div>
 
-                    {/* Hidden render target */}
-                    <div className="hidden">
+                    {/* Hidden render target — must be visible for html2canvas to capture charts */}
+                    <div style={{ position: 'fixed', left: '-9999px', top: 0, width: 960, pointerEvents: 'none', zIndex: -1 }}>
                         <PrintableReport ref={reportRef} data={filteredData} profile={profile} dateLabel={dateLabel} />
                     </div>
 
