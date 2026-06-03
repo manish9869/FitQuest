@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
     ArrowLeft, User, Target, FileText, MessageSquare, Loader2,
-    Scale, Moon, Dumbbell, Pill, Activity,
+    Scale, Moon, Dumbbell, Pill, Activity, Flame, Star,
     Trophy, Utensils, Camera, CalendarRange, ChevronLeft, ChevronRight, Zap
 } from 'lucide-react';
 import UserTasksWidget from '@/pages/admin/UserTasksWidget';
@@ -495,18 +495,37 @@ export default function AdminUserDetail() {
                             </div>
                         </GlassCard>
                         <GlassCard animate={false}>
-                            <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements</h3>
-                            <AchievementBadges />
-                            <div className="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-3 text-center">
-                                <div>
-                                    <div className="text-xl font-bold text-yellow-400">{profile?.total_xp?.toLocaleString() || 0}</div>
-                                    <div className="text-xs text-muted-foreground">Total XP</div>
+                            <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements & XP</h3>
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                                    <Zap className="w-4 h-4 text-yellow-400 mx-auto mb-1" />
+                                    <div className="text-2xl font-black text-yellow-400 font-space">{(profile?.total_xp || 0).toLocaleString()}</div>
+                                    <div className="text-[10px] text-yellow-400/60 uppercase tracking-wide">Total XP</div>
                                 </div>
-                                <div>
-                                    <div className="text-xl font-bold text-orange-400">{profile?.longest_streak || 0}</div>
-                                    <div className="text-xs text-muted-foreground">Best Streak</div>
+                                <div className="rounded-xl p-3 text-center" style={{ background: 'rgba(249,115,22,0.08)', border: '1px solid rgba(249,115,22,0.2)' }}>
+                                    <Flame className="w-4 h-4 text-orange-400 mx-auto mb-1" />
+                                    <div className="text-2xl font-black text-orange-400 font-space">{profile?.longest_streak || 0}</div>
+                                    <div className="text-[10px] text-orange-400/60 uppercase tracking-wide">Best Streak</div>
                                 </div>
                             </div>
+                            {(!profile?.achievements || profile.achievements.length === 0) ? (
+                                <div className="text-center py-6">
+                                    <Trophy className="w-10 h-10 mx-auto mb-2 text-muted-foreground/20" />
+                                    <p className="text-sm text-muted-foreground italic">No achievements yet.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                                    {profile.achievements.map((a, i) => (
+                                        <div key={a} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
+                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0" style={{ background: 'rgba(245,158,11,0.15)' }}>
+                                                🏆
+                                            </div>
+                                            <span className="text-sm text-yellow-300 font-medium">{a.replace(/_/g, ' ')}</span>
+                                            <Star className="w-3 h-3 text-yellow-500/50 ml-auto flex-shrink-0" />
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </GlassCard>
                     </div>
                     <div className="grid lg:grid-cols-2 gap-5">
