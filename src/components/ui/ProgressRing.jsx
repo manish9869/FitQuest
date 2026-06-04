@@ -1,7 +1,9 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 
-export default function ProgressRing({ value = 0, max = 100, size = 120, strokeWidth = 8, color = '#22c55e', bgColor = 'rgba(255,255,255,0.1)', children }) {
+export default function ProgressRing({ value = 0, max = 100, size = 120, strokeWidth = 8, color = '#22c55e', bgColor, children }) {
+    // Use CSS variable so it adapts to light/dark mode
+    const trackColor = bgColor || 'var(--ring-track, rgba(128,128,128,0.18))';
     const radius = (size - strokeWidth) / 2;
     const circumference = 2 * Math.PI * radius;
     const percentage = Math.min(value / max, 1);
@@ -10,7 +12,7 @@ export default function ProgressRing({ value = 0, max = 100, size = 120, strokeW
     return (
         <div className="relative inline-flex items-center justify-center" style={{ width: size, height: size }}>
             <svg width={size} height={size} className="-rotate-90">
-                <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={bgColor} strokeWidth={strokeWidth} />
+                <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={trackColor} strokeWidth={strokeWidth} />
                 <motion.circle
                     cx={size / 2}
                     cy={size / 2}
@@ -31,5 +33,3 @@ export default function ProgressRing({ value = 0, max = 100, size = 120, strokeW
         </div>
     );
 }
-
-

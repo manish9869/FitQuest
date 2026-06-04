@@ -11,24 +11,34 @@ const Spinner = () => (
 );
 
 export default function ProtectedRoute({ children }) {
-    const { isAuthenticated, isLoadingAuth, authChecked, user, isAdmin, userRole } = useAuth();
+    const { isAuthenticated, isLoadingAuth, authChecked, isLoadingRole, isAdmin, userRole } = useAuth();
     const location = useLocation();
 
-    // Wait until auth + role are fully resolved
-    if (!authChecked || isLoadingAuth || userRole === null) {
+    // 1. Wait for auth session to resolve
+    if (!authChecked || isLoadingAuth) {
         return <Spinner />;
     }
 
-    // Not logged in → send to login
+    // 2. Not logged in → send to login, remembering where they wanted to go
     if (!isAuthenticated) {
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
-    // Admin on admin route → render
+    // 3. Logged in but role not yet fetched from DB → hold here, don't redirect
+    //    This is the key fix: prevents the brief flash-redirect to /dashboard
+    if (isLoadingRole) {
+        return <Spinner />;
+    }
+
+    // 4. Role is confirmed — now make routing decisions
+
+    // Admin trying to reach an admin route → allow
+    if (isAdmin && location.pathname.startsWith('/admin')) {
+        return children;
+    }
+
+    // Admin on a non-admin route → send to admin
     if (isAdmin) {
-        if (location.pathname.startsWith('/admin')) {
-            return children;
-        }
         return <Navigate to="/admin" replace />;
     }
 

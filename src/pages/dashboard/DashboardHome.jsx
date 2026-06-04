@@ -6,6 +6,7 @@ import { entities } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { today, calculateFitnessScore, getScoreEmoji, getSmartInsights } from '@/lib/fitnessUtils';
 import { updateLoginStreak } from '@/lib/xpEngine';
+import { runAutomations } from '@/lib/automationEngine';
 import { motion } from 'framer-motion';
 import { useNavigate, Link } from 'react-router-dom';
 import { format, subDays, parseISO } from 'date-fns';
@@ -30,7 +31,7 @@ import ResizableWidget from '@/components/ui/ResizableWidget';
 const MiniTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.[0]) return null;
     return (
-        <div className="glass rounded-lg p-2 text-xs border border-white/10">
+        <div className="bg-card border border-border rounded-lg p-2 text-xs shadow-lg">
             <p className="font-semibold">{label}</p>
             <p style={{ color: payload[0].color }}>{payload[0].value?.toLocaleString()}</p>
         </div>
@@ -76,6 +77,17 @@ export default function DashboardHome() {
             });
         }
     }, [profile?.id]);
+
+    // Run automation engine once per session when data is ready
+    useEffect(() => {
+        if (!user?.email || !profile) return;
+        runAutomations(user, {
+            recentWorkouts: workouts,
+            todayWater: waterLogs.reduce((s, w) => s + (w.amount_ml || 0), 0),
+            todayCalories: meals.reduce((s, m) => s + (m.calories || 0), 0),
+            loginStreak: profile.login_streak || 0,
+        });
+    }, [user?.email, profile?.id]);
 
     const saveLayout = useMutation({
         mutationFn: (layout) => entities.UserProfile.update(profile.id, { dashboard_layout: layout }),
@@ -191,7 +203,7 @@ export default function DashboardHome() {
                                     </div>
                                     <div className="text-sm font-bold" style={{ color: stat.color }}>{Math.round(pct)}%</div>
                                 </div>
-                                <div className="h-1.5 rounded-full bg-white/10 mt-3 overflow-hidden">
+                                <div className="h-1.5 rounded-full bg-black/10 dark:bg-white/10 mt-3 overflow-hidden">
                                     <motion.div className="h-full rounded-full" style={{ backgroundColor: stat.color }}
                                         initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 1.2, ease: 'easeOut' }} />
                                 </div>
@@ -218,7 +230,7 @@ export default function DashboardHome() {
                                     <span className="text-muted-foreground">{macro.label}</span>
                                     <span className="font-medium">{macro.value}g <span className="text-muted-foreground">/ {macro.target}g</span></span>
                                 </div>
-                                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                <div className="h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
                                     <motion.div className="h-full rounded-full" style={{ backgroundColor: macro.color }}
                                         initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 1 }} />
                                 </div>
@@ -268,9 +280,9 @@ export default function DashboardHome() {
                                             <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                                         </linearGradient>
                                     </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                    <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={11} />
-                                    <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} />
+                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                    <XAxis dataKey="date" stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                    <YAxis stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                     <Tooltip content={<MiniTooltip />} />
                                     <Area type="monotone" dataKey="calories" stroke="#22c55e" fill="url(#dashCalGrad)" strokeWidth={2} dot={false} />
                                 </AreaChart>
@@ -305,8 +317,8 @@ export default function DashboardHome() {
                                     <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                                 </linearGradient>
                             </defs>
-                            <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                            <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} domain={['auto', 'auto']} />
+                            <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                            <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} domain={['auto', 'auto']} />
                             <Tooltip content={<MiniTooltip />} />
                             <Area type="monotone" dataKey="weight" stroke="#22c55e" fill="url(#wdash)" strokeWidth={2} dot={false} />
                         </AreaChart>

@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import UserTasksWidget from '@/pages/admin/UserTasksWidget';
 import { toast } from 'sonner';
-
+import PDFReportGenerator from '@/components/reports/PDFReportGenerator';
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -354,6 +354,7 @@ export default function AdminUserDetail() {
                     </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
+                    {email && <PDFReportGenerator userEmail={email} profileData={profile} buttonLabel="Download Report" variant="outline" />}
                     <Dialog open={planOpen} onOpenChange={setPlanOpen}>
                         <DialogTrigger asChild>
                             <Button className="bg-purple-500 hover:bg-purple-600 text-white rounded-xl"><FileText className="w-4 h-4 mr-2" /> Assign Plan</Button>

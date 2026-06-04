@@ -6,14 +6,14 @@ const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [userRole, setUserRole] = useState('user'); // default 'user', never null
+    const [userRole, setUserRole] = useState('user');
+    const [isLoadingRole, setIsLoadingRole] = useState(true); // ← NEW: true until role is confirmed
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [isLoadingAuth, setIsLoadingAuth] = useState(true);
     const [authChecked, setAuthChecked] = useState(false);
 
     const isMounted = useRef(true);
 
-    // Fetch role with a hard timeout so a slow/blocked DB query never hangs the UI
     const fetchRole = useCallback(async (email) => {
         try {
             const result = await Promise.race([
@@ -22,7 +22,6 @@ export const AuthProvider = ({ children }) => {
                     .select('role')
                     .eq('user_email', email)
                     .maybeSingle(),
-                // 3-second timeout — if the DB hangs, default to 'user'
                 new Promise((_, reject) =>
                     setTimeout(() => reject(new Error('fetchRole timeout')), 3000)
                 ),
@@ -34,8 +33,12 @@ export const AuthProvider = ({ children }) => {
     }, []);
 
     const refreshRole = useCallback(async (email) => {
+        setIsLoadingRole(true);
         const role = await fetchRole(email);
-        if (isMounted.current) setUserRole(role);
+        if (isMounted.current) {
+            setUserRole(role);
+            setIsLoadingRole(false);
+        }
         return role;
     }, [fetchRole]);
 
@@ -66,6 +69,7 @@ export const AuthProvider = ({ children }) => {
                 if (event === 'SIGNED_OUT') {
                     setUser(null);
                     setUserRole('user');
+                    setIsLoadingRole(false);
                     setIsAuthenticated(false);
                     setIsLoadingAuth(false);
                     setAuthChecked(true);
@@ -73,20 +77,21 @@ export const AuthProvider = ({ children }) => {
                 }
 
                 if (session?.user) {
-                    // ── KEY FIX: unblock the spinner IMMEDIATELY ──────────────
-                    // Set authenticated state right away with default role 'user',
-                    // then fetch the real role in the background.
+                    // Unblock auth spinner immediately — but keep isLoadingRole=true
+                    // so ProtectedRoute doesn't redirect before role is known.
                     setUser(session.user);
                     setIsAuthenticated(true);
                     setIsLoadingAuth(false);
                     setAuthChecked(true);
+                    setIsLoadingRole(true); // hold redirects until role resolves
 
-                    // Fetch role async — UI is already unblocked
                     fetchRole(session.user.email).then(role => {
-                        if (isMounted.current) setUserRole(role);
+                        if (isMounted.current) {
+                            setUserRole(role);
+                            setIsLoadingRole(false); // now safe to route
+                        }
                     });
 
-                    // Login streak for new sign-ins only
                     if (event === 'SIGNED_IN') {
                         const lockKey = `streak_lock_${session.user.email}`;
                         if (!localStorage.getItem(lockKey)) {
@@ -106,6 +111,7 @@ export const AuthProvider = ({ children }) => {
                 } else {
                     setUser(null);
                     setUserRole('user');
+                    setIsLoadingRole(false);
                     setIsAuthenticated(false);
                     setIsLoadingAuth(false);
                     setAuthChecked(true);
@@ -113,23 +119,29 @@ export const AuthProvider = ({ children }) => {
             }
         );
 
-        // Fallback: if onAuthStateChange never fires (rare), use getSession
+        // Fallback if onAuthStateChange never fires
         const fallbackTimer = setTimeout(async () => {
             if (!isMounted.current || listenerFired) return;
 
-            const { data: { session } } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+            const { data: { session } } = await supabase.auth.getSession()
+                .catch(() => ({ data: { session: null } }));
 
             if (!isMounted.current || listenerFired) return;
 
             if (session?.user) {
                 setUser(session.user);
                 setIsAuthenticated(true);
+                setIsLoadingRole(true);
                 fetchRole(session.user.email).then(role => {
-                    if (isMounted.current) setUserRole(role);
+                    if (isMounted.current) {
+                        setUserRole(role);
+                        setIsLoadingRole(false);
+                    }
                 });
             } else {
                 setUser(null);
                 setIsAuthenticated(false);
+                setIsLoadingRole(false);
             }
             setIsLoadingAuth(false);
             setAuthChecked(true);
@@ -145,19 +157,20 @@ export const AuthProvider = ({ children }) => {
     const logout = async () => {
         setUser(null);
         setUserRole('user');
+        setIsLoadingRole(false);
         setIsAuthenticated(false);
         setAuthChecked(true);
         setIsLoadingAuth(false);
         clearLocalStorage();
         window.location.href = '/';
         await supabase.auth.signOut();
-
     };
 
     return (
         <AuthContext.Provider value={{
             user,
             userRole,
+            isLoadingRole, // ← expose so ProtectedRoute can wait
             isAdmin: userRole === 'admin',
             isAuthenticated,
             isLoadingAuth,
