@@ -15,17 +15,17 @@ const COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f97316', '#ef4444', '#06b6d4'
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
-        <div className="glass rounded-lg p-3 text-xs border border-white/10">
+        <div className="bg-card border border-border rounded-lg p-3 text-xs shadow-lg">
             {label && <p className="font-semibold mb-1 text-muted-foreground">{label}</p>}
-            {payload.map(p => <p key={p.name} style={{ color: p.color || '#fff' }}>{p.name}: {p.value?.toLocaleString()}</p>)}
+            {payload.map(p => <p key={p.name} style={{ color: p.color }}>{p.name}: {p.value?.toLocaleString()}</p>)}
         </div>
     );
 };
 
-const KPICard = ({ icon: Icon, label, value, sub, color = 'text-white', iconColor = 'text-emerald-400' }) => (
-    <div className="glass rounded-xl p-4 border border-white/5">
+const KPICard = ({ icon: Icon, label, value, sub, color = 'text-foreground', iconColor = 'text-emerald-400' }) => (
+    <div className="glass rounded-xl p-4 border border-border">
         <div className="flex items-center gap-3 mb-2">
-            <div className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center flex-shrink-0">
+            <div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center flex-shrink-0">
                 <Icon className={`w-4 h-4 ${iconColor}`} />
             </div>
             <span className="text-xs text-muted-foreground">{label}</span>
@@ -152,20 +152,20 @@ export default function AdminAnalytics() {
                 <div className="flex items-center gap-2 flex-wrap">
                     {[7, 14, 30, 60].map(r => (
                         <button key={r} onClick={() => { setRange(r); setUseCustom(false); }}
-                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-muted-foreground hover:bg-black/5 border border-transparent'}`}>
                             {r}d
                         </button>
                     ))}
-                    <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-border">
                         <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                         <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                            className="text-xs bg-muted border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
                         <span className="text-xs text-muted-foreground">–</span>
                         <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                            className="text-xs bg-muted border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
                         {customFrom && customTo && (
                             <button onClick={() => setUseCustom(true)}
-                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-muted-foreground border border-white/10 hover:border-blue-500/30 hover:text-blue-300'}`}>
+                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-muted text-muted-foreground border border-border hover:border-blue-500/30 hover:text-blue-400'}`}>
                                 Apply
                             </button>
                         )}
@@ -175,11 +175,11 @@ export default function AdminAnalytics() {
 
             {/* KPI Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                <KPICard icon={Users} label="Total Users" value={totalUsers} sub="all registered" iconColor="text-blue-400" color="text-blue-300" />
-                <KPICard icon={Activity} label="Active (7d)" value={activeUsers7d} sub="logged any metric" iconColor="text-emerald-400" color="text-emerald-300" />
-                <KPICard icon={Flame} label="At Risk" value={atRisk} sub="0-day streak" iconColor="text-red-400" color="text-red-300" />
-                <KPICard icon={Zap} label="Avg XP" value={avgXP.toLocaleString()} sub="per user" iconColor="text-yellow-400" color="text-yellow-300" />
-                <KPICard icon={TrendingUp} label="Avg Streak" value={`${avgStreak}d`} sub="login days" iconColor="text-orange-400" color="text-orange-300" />
+                <KPICard icon={Users} label="Total Users" value={totalUsers} sub="all registered" iconColor="text-blue-400" color="text-blue-500" />
+                <KPICard icon={Activity} label="Active (7d)" value={activeUsers7d} sub="logged any metric" iconColor="text-emerald-400" color="text-emerald-600" />
+                <KPICard icon={Flame} label="At Risk" value={atRisk} sub="0-day streak" iconColor="text-red-400" color="text-red-500" />
+                <KPICard icon={Zap} label="Avg XP" value={avgXP.toLocaleString()} sub="per user" iconColor="text-yellow-400" color="text-yellow-500" />
+                <KPICard icon={TrendingUp} label="Avg Streak" value={`${avgStreak}d`} sub="login days" iconColor="text-orange-400" color="text-orange-500" />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

@@ -5,6 +5,7 @@ import {
     XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine
 } from 'recharts';
 import GlassCard from '@/components/ui/GlassCard';
+import { Calendar } from 'lucide-react';
 
 const RANGES = [
     { label: '7D', days: 7 },
@@ -16,7 +17,7 @@ const RANGES = [
 const CustomTooltip = ({ active, payload, label, unit, color }) => {
     if (!active || !payload?.[0]) return null;
     return (
-        <div className="glass rounded-xl p-3 text-xs border border-white/10 shadow-xl">
+        <div className="bg-card border border-border rounded-xl p-3 text-xs shadow-xl">
             <p className="text-muted-foreground mb-1">{label}</p>
             <p className="font-bold" style={{ color }}>{payload[0].value?.toLocaleString()} {unit}</p>
         </div>
@@ -49,10 +50,16 @@ export default function TrackerHistoryChart({
     aggregator = 'sum',
 }) {
     const [range, setRange] = useState(14);
+    const [customFrom, setCustomFrom] = useState('');
+    const [customTo, setCustomTo] = useState('');
+    const [useCustom, setUseCustom] = useState(false);
 
     const chartData = useMemo(() => {
-        const cutoff = format(subDays(new Date(), range), 'yyyy-MM-dd');
-        const days = eachDayOfInterval({ start: subDays(new Date(), range), end: new Date() });
+        const startDate = useCustom && customFrom && customTo
+            ? new Date(customFrom + 'T00:00:00')
+            : subDays(new Date(), range);
+        const endDate = useCustom && customTo ? new Date(customTo + 'T00:00:00') : new Date();
+        const days = eachDayOfInterval({ start: startDate, end: endDate });
 
         return days.map(day => {
             const dayStr = format(day, 'yyyy-MM-dd');
@@ -63,12 +70,12 @@ export default function TrackerHistoryChart({
                 value = aggregator === 'avg' ? Math.round((sum / dayLogs.length) * 10) / 10 : sum;
             }
             return {
-                date: format(day, range <= 14 ? 'MMM d' : 'MMM d'),
+                date: format(day, days.length <= 14 ? 'MMM d' : 'MMM d'),
                 value,
                 hasData: dayLogs.length > 0,
             };
         });
-    }, [logs, dataKey, range, aggregator]);
+    }, [logs, dataKey, range, aggregator, useCustom, customFrom, customTo]);
 
     const nonZero = chartData.filter(d => d.value > 0);
     const avg = nonZero.length ? Math.round((nonZero.reduce((s, d) => s + d.value, 0) / nonZero.length) * 10) / 10 : 0;
@@ -84,19 +91,34 @@ export default function TrackerHistoryChart({
                 <div>
                     <h3 className="font-semibold text-sm">{label}</h3>
                     <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
-                        <span>Avg: <span className="text-white font-medium">{avg.toLocaleString()} {unit}</span></span>
-                        <span>Max: <span className="text-white font-medium">{max.toLocaleString()} {unit}</span></span>
+                        <span>Avg: <span className="text-foreground font-medium">{avg.toLocaleString()} {unit}</span></span>
+                        <span>Max: <span className="text-foreground font-medium">{max.toLocaleString()} {unit}</span></span>
                         {goal && <span>Goal: <span style={{ color }} className="font-medium">{goal.toLocaleString()} {unit}</span></span>}
                     </div>
                 </div>
-                <div className="flex gap-1">
+                <div className="flex items-center gap-1 flex-wrap">
                     {RANGES.map(r => (
-                        <button key={r.label} onClick={() => setRange(r.days)}
-                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${range === r.days ? 'text-white border border-white/20' : 'text-muted-foreground hover:text-white hover:bg-white/5'}`}
-                            style={range === r.days ? { backgroundColor: color + '22', borderColor: color + '55', color } : {}}>
+                        <button key={r.label} onClick={() => { setRange(r.days); setUseCustom(false); }}
+                            className={`text-xs px-2.5 py-1 rounded-lg font-medium transition-all ${!useCustom && range === r.days ? 'border border-border' : 'text-muted-foreground hover:text-foreground hover:bg-black/5'}`}
+                            style={!useCustom && range === r.days ? { backgroundColor: color + '22', borderColor: color + '55', color } : {}}>
                             {r.label}
                         </button>
                     ))}
+                    <div className="flex items-center gap-1 border-l border-border pl-1.5 ml-0.5">
+                        <Calendar className="w-3 h-3 text-muted-foreground" />
+                        <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
+                            className="text-[10px] bg-muted border border-border rounded px-1.5 py-0.5 text-foreground w-24 focus:outline-none" />
+                        <span className="text-[10px] text-muted-foreground">–</span>
+                        <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
+                            className="text-[10px] bg-muted border border-border rounded px-1.5 py-0.5 text-foreground w-24 focus:outline-none" />
+                        {customFrom && customTo && (
+                            <button onClick={() => setUseCustom(true)}
+                                className="text-[10px] px-2 py-0.5 rounded font-medium transition-all"
+                                style={useCustom ? { backgroundColor: color + '22', color, border: `1px solid ${color}55` } : {}}>
+                                Apply
+                            </button>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -113,9 +135,9 @@ export default function TrackerHistoryChart({
                                 <stop offset="100%" stopColor={color} stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'rgba(255,255,255,0.35)' }} interval="preserveStartEnd" />
-                        <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'rgba(255,255,255,0.35)' }} domain={['auto', 'auto']} width={36} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                        <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} interval="preserveStartEnd" />
+                        <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} domain={['auto', 'auto']} width={36} />
                         <Tooltip content={<CustomTooltip unit={unit} color={color} />} />
                         {goal && (
                             <ReferenceLine y={goal} stroke={color} strokeDasharray="5 4" strokeWidth={1.5}

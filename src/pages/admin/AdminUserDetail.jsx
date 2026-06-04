@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { entities } from '@/api/entities';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '@/lib/AuthContext';
 import { format, subDays, parseISO, eachDayOfInterval } from 'date-fns';
 import { today, goalLabels, activityLabels } from '@/lib/fitnessUtils';
@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import UserTasksWidget from '@/pages/admin/UserTasksWidget';
 import { toast } from 'sonner';
-
+import PDFReportGenerator from '@/components/reports/PDFReportGenerator';
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
@@ -120,10 +120,10 @@ export default function AdminUserDetail() {
     const navigate = useNavigate();
     const { user: admin } = useAuth();
     const qc = useQueryClient();
-    const userId = window.location.pathname.split('/').pop();
+    // FIX 1: use useParams instead of window.location.pathname — fixes refresh redirect
+    const { id: userId } = useParams();
     const [activeTab, setActiveTab] = useState('overview');
 
-    // Chart range (multi-day) — used for all charts
     const [chartStart, setChartStart] = useState(format(subDays(new Date(), 13), 'yyyy-MM-dd'));
     const [chartEnd, setChartEnd] = useState(format(new Date(), 'yyyy-MM-dd'));
     const handleChartPreset = (days) => {
@@ -131,10 +131,8 @@ export default function AdminUserDetail() {
         setChartEnd(format(new Date(), 'yyyy-MM-dd'));
     };
 
-    // Single-day (for log tables)
     const [selectedDay, setSelectedDay] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-    // Date range as array
     const chartDates = useMemo(() => {
         const s = parseISO(chartStart), e = parseISO(chartEnd);
         if (e < s) return [chartStart];
@@ -144,15 +142,11 @@ export default function AdminUserDetail() {
     const chartDays = chartDates.length || 1;
     const rangeLabel = (d) => format(parseISO(d), chartDays <= 31 ? 'MMM d' : 'MMM d');
 
-    // ── Data queries ──────────────────────────────────────────────────────────
-    // FIX: use entities.UserProfile.list() not entities.User.list()
     const { data: allUsers = [] } = useQuery({ queryKey: ['admin-users'], queryFn: () => entities.UserProfile.list() });
     const targetUser = allUsers.find(u => u.id === userId);
-    // FIX: use targetUser.user_email not targetUser.email
     const email = targetUser?.user_email;
     const qOpts = { enabled: !!email };
 
-    // Master achievements table
     const { data: masterAchievements = [] } = useQuery({
         queryKey: ['achievements-master'],
         queryFn: () => entities.Achievement.list(),
@@ -178,7 +172,6 @@ export default function AdminUserDetail() {
 
     const profile = profiles[0] || targetUser;
 
-    // ── Unified lookup: achievement_id, uuid, name → achievement row ──────────
     const achievementLookup = useMemo(() => {
         const map = {};
         masterAchievements.forEach(a => {
@@ -203,7 +196,7 @@ export default function AdminUserDetail() {
         if (a) return { name: a.name, icon: a.icon || '🏅', color: a.color || 'yellow', xp: a.xp_reward };
 
         const c = challengeLookup[raw] || challengeLookup[raw?.toLowerCase?.()];
-        if (c) return { name: `${c.name}`, icon: '🏆', color: 'orange', xp: null };
+        if (c) return { name: c.name, icon: '🏆', color: 'orange', xp: null };
 
         if (raw && !raw.includes('-')) {
             const pretty = raw.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -213,7 +206,6 @@ export default function AdminUserDetail() {
         return null;
     };
 
-    // ── Chart data ────────────────────────────────────────────────────────────
     const nutritionChartData = useMemo(() => chartDates.map(date => ({
         date: rangeLabel(date),
         calories: meals.filter(m => m.date === date).reduce((s, m) => s + (m.calories || 0), 0),
@@ -240,7 +232,6 @@ export default function AdminUserDetail() {
             .map(l => ({ date: format(parseISO(l.date), 'MMM d'), weight: l.weight_kg })),
         [weightLogs, chartStart, chartEnd]);
 
-    // ── Day-filtered log data ─────────────────────────────────────────────────
     const dayMeals = useMemo(() => meals.filter(m => m.date === selectedDay), [meals, selectedDay]);
     const dayWater = useMemo(() => waterLogs.filter(w => w.date === selectedDay), [waterLogs, selectedDay]);
     const daySteps = useMemo(() => stepLogs.filter(s => s.date === selectedDay), [stepLogs, selectedDay]);
@@ -249,7 +240,6 @@ export default function AdminUserDetail() {
     const dayWeight = useMemo(() => weightLogs.filter(l => l.date === selectedDay), [weightLogs, selectedDay]);
     const dayProgress = useMemo(() => bodyProgress.filter(b => b.date === selectedDay), [bodyProgress, selectedDay]);
 
-    // ── KPI summaries (last 7 days always) ───────────────────────────────────
     const last7start = format(subDays(new Date(), 6), 'yyyy-MM-dd');
     const workouts7 = workouts.filter(w => w.date >= last7start).length;
     const avgCal7 = useMemo(() => {
@@ -271,7 +261,6 @@ export default function AdminUserDetail() {
     const status = streak > 3 ? 'Active' : streak > 0 ? 'At Risk' : 'Inactive';
     const statusColor = status === 'Active' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : status === 'At Risk' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20';
 
-    // ── Mutations ─────────────────────────────────────────────────────────────
     const [planOpen, setPlanOpen] = useState(false);
     const [planForm, setPlanForm] = useState({ plan_type: 'nutrition', title: '', description: '', calorie_target: '', protein_target: '', step_target: '', water_target_ml: '', notes: '' });
     const createPlan = useMutation({
@@ -285,9 +274,19 @@ export default function AdminUserDetail() {
         onSuccess: () => { qc.invalidateQueries({ queryKey: ['aun'] }); setNoteOpen(false); setNoteForm({ note: '', category: 'general' }); toast.success('Note added!'); },
     });
 
-    if (!targetUser) return (
+    // Show spinner while users are loading but userId is known
+    if (allUsers.length === 0) return (
         <div className="flex justify-center py-20">
             <div className="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin" />
+        </div>
+    );
+
+    if (!targetUser) return (
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <p className="text-muted-foreground">User not found.</p>
+            <Button variant="ghost" onClick={() => navigate('/admin/users')}>
+                <ArrowLeft className="w-4 h-4 mr-2" /> Back to Users
+            </Button>
         </div>
     );
 
@@ -303,41 +302,11 @@ export default function AdminUserDetail() {
         { id: 'tasks', label: 'Tasks', icon: Zap },
     ];
 
-    // Tabs that use the day picker for log tables
     const DAY_TABS = ['nutrition', 'activity', 'weight', 'sleep', 'body_progress'];
-    // Tabs that show charts (use chart range)
     const CHART_TABS = ['overview', 'nutrition', 'activity', 'weight', 'sleep'];
 
-    // FIX: use user_email not email for display
-    const displayName = targetUser.user_email?.split('@')[0] || targetUser.user_email;
+    const displayName = targetUser.full_name || targetUser.user_email?.split('@')[0] || targetUser.user_email;
 
-    // ── Achievement badge renderer ─────────────────────────────────────────────
-    const AchievementBadges = () => {
-        const rawList = profile?.achievements || [];
-        if (!rawList.length) return <p className="text-sm text-muted-foreground italic">No achievements yet.</p>;
-
-        const resolved = rawList.map((raw, i) => ({ raw, info: resolveAchievement(raw), i }));
-        const visible = resolved.filter(r => r.info !== null);
-
-        if (!visible.length) return <p className="text-sm text-muted-foreground italic">No achievements yet.</p>;
-
-        return (
-            <div className="flex flex-wrap gap-2">
-                {visible.map(({ raw, info, i }) => {
-                    const c = ACHIEVEMENT_COLORS[info.color] || ACHIEVEMENT_COLORS.yellow;
-                    return (
-                        <div key={i} className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold ${c.bg} ${c.text} ${c.border}`}>
-                            <span>{info.icon}</span>
-                            <span>{info.name}</span>
-                            {info.xp && <span className="opacity-60">+{info.xp}xp</span>}
-                        </div>
-                    );
-                })}
-            </div>
-        );
-    };
-
-    // ── Shared filter bar shown at top of relevant tabs ───────────────────────
     const FilterBar = () => {
         const showChart = CHART_TABS.includes(activeTab);
         const showDay = DAY_TABS.includes(activeTab);
@@ -385,7 +354,7 @@ export default function AdminUserDetail() {
                     </div>
                 </div>
                 <div className="flex gap-2 flex-wrap">
-                    {/* Assign Plan dialog */}
+                    {email && <PDFReportGenerator userEmail={email} profileData={profile} buttonLabel="Download Report" variant="outline" />}
                     <Dialog open={planOpen} onOpenChange={setPlanOpen}>
                         <DialogTrigger asChild>
                             <Button className="bg-purple-500 hover:bg-purple-600 text-white rounded-xl"><FileText className="w-4 h-4 mr-2" /> Assign Plan</Button>
@@ -420,7 +389,6 @@ export default function AdminUserDetail() {
                         </DialogContent>
                     </Dialog>
 
-                    {/* Add Note dialog */}
                     <Dialog open={noteOpen} onOpenChange={setNoteOpen}>
                         <DialogTrigger asChild>
                             <Button variant="outline" className="border-white/10 rounded-xl"><MessageSquare className="w-4 h-4 mr-2" /> Add Note</Button>
@@ -467,7 +435,6 @@ export default function AdminUserDetail() {
                 {tabs.map(t => <SectionTab key={t.id} {...t} active={activeTab === t.id} onClick={setActiveTab} />)}
             </div>
 
-            {/* ── Contextual filter bar ── */}
             <FilterBar />
 
             {/* ══════════════ OVERVIEW ══════════════ */}
@@ -494,6 +461,7 @@ export default function AdminUserDetail() {
                                 ))}
                             </div>
                         </GlassCard>
+                        {/* FIX 2: Achievements now show resolved names/icons via resolveAchievement() */}
                         <GlassCard animate={false}>
                             <h3 className="font-semibold mb-4 flex items-center gap-2"><Trophy className="w-4 h-4 text-yellow-400" /> Achievements & XP</h3>
                             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -515,15 +483,20 @@ export default function AdminUserDetail() {
                                 </div>
                             ) : (
                                 <div className="space-y-1.5 max-h-44 overflow-y-auto">
-                                    {profile.achievements.map((a, i) => (
-                                        <div key={a} className="flex items-center gap-3 px-3 py-2 rounded-xl" style={{ background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.15)' }}>
-                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0" style={{ background: 'rgba(245,158,11,0.15)' }}>
-                                                🏆
+                                    {profile.achievements.map((a, i) => {
+                                        const info = resolveAchievement(a);
+                                        if (!info) return null;
+                                        const c = ACHIEVEMENT_COLORS[info.color] || ACHIEVEMENT_COLORS.yellow;
+                                        return (
+                                            <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-xl border ${c.bg} ${c.border}`}>
+                                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-sm flex-shrink-0 ${c.bg}`}>
+                                                    {/* {info.icon} */} 🏆
+                                                </div>
+                                                <span className={`text-sm font-medium flex-1 ${c.text}`}>{info.name}</span>
+                                                {info.xp && <span className="text-xs text-yellow-500/60 flex-shrink-0">+{info.xp}xp</span>}
                                             </div>
-                                            <span className="text-sm text-yellow-300 font-medium">{a.replace(/_/g, ' ')}</span>
-                                            <Star className="w-3 h-3 text-yellow-500/50 ml-auto flex-shrink-0" />
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </GlassCard>
@@ -592,7 +565,6 @@ export default function AdminUserDetail() {
                             </ResponsiveContainer>
                         </GlassCard>
                     </div>
-                    {/* Day log */}
                     <GlassCard animate={false}>
                         <h4 className="font-medium mb-4">Meals on {format(parseISO(selectedDay), 'EEEE, MMM d')} <span className="text-muted-foreground text-xs font-normal">({dayMeals.length} entries)</span></h4>
                         <div className="space-y-2 max-h-72 overflow-y-auto">
@@ -657,7 +629,6 @@ export default function AdminUserDetail() {
                             </ResponsiveContainer>
                         </GlassCard>
                     </div>
-                    {/* Day logs */}
                     <div className="grid lg:grid-cols-2 gap-5">
                         <GlassCard animate={false}>
                             <h4 className="font-medium mb-4">Workouts on {format(parseISO(selectedDay), 'MMM d')} <span className="text-muted-foreground text-xs">({dayWorkouts.length})</span></h4>
@@ -884,7 +855,6 @@ export default function AdminUserDetail() {
                                     <div key={note.id} className="glass rounded-xl p-4 border border-white/5">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${note.category === 'motivation' ? 'bg-emerald-500/10 text-emerald-400' : note.category === 'warning' ? 'bg-yellow-500/10 text-yellow-400' : note.category === 'intervention' ? 'bg-red-500/10 text-red-400' : note.category === 'progress' ? 'bg-blue-500/10 text-blue-400' : 'bg-white/10 text-muted-foreground'}`}>{note.category}</span>
-                                            {/* FIX: use note.created_at not note.created_date */}
                                             <span className="text-xs text-muted-foreground">{note.created_at ? format(new Date(note.created_at), 'MMM d') : ''}</span>
                                         </div>
                                         <p className="text-sm">{note.note}</p>

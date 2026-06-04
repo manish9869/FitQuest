@@ -5,6 +5,7 @@ import { queryClientInstance } from '@/lib/query-client'
 import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import PageNotFound from './lib/PageNotFound';
 import { AuthProvider, useAuth } from '@/lib/AuthContext';
+import { ThemeProvider } from '@/lib/ThemeContext';
 import { FeatureFlagProvider } from '@/lib/FeatureFlagContext';
 import FeatureGate from '@/components/dashboard/FeatureGate';
 import LoginPage from '@/components/auth/LoginPage';
@@ -167,18 +168,19 @@ const AuthenticatedApp = () => {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClientInstance}>
+    <ThemeProvider>
       <AuthProvider>
-        <Router>
-          <AuthenticatedApp />
-        </Router>
-        <Toaster />
-        <SonnerToaster position="top-right" theme="dark" />
+        <QueryClientProvider client={queryClientInstance}>
+          <Router>
+            <AuthenticatedApp />
+          </Router>
+          <Toaster />
+          <SonnerToaster position="top-right" theme="dark" />
+        </QueryClientProvider>
       </AuthProvider>
-    </QueryClientProvider>
+    </ThemeProvider>
   )
 }
-
 export default App
 
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Flame, Menu, Shield, LogOut, ChevronRight, Lock } from 'lucide-react';
+import { Settings, Flame, Menu, Shield, LogOut, ChevronRight, Lock, Zap, LayoutGrid, Crown, Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { entities } from '@/api/entities';
@@ -9,8 +9,8 @@ import FloatingCoach from '@/components/dashboard/FloatingCoach';
 import MessageNotifier from '@/components/dashboard/MessageNotifier';
 import { useQuery } from '@tanstack/react-query';
 import { useFeatureFlags } from '@/lib/FeatureFlagContext';
-import { PLAN_CONFIG } from '@/lib/featureFlags';
-
+import { useTheme } from '@/lib/ThemeContext';
+import { PLAN_CONFIG, canAccess } from '@/lib/featureFlags';
 
 export default function DashboardLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -20,19 +20,19 @@ export default function DashboardLayout() {
 
     // ── Pull feature flags + user plan ───────────────────────────────────────
     const { features, userPlan, isFeatureAccessible } = useFeatureFlags();
+    const { theme, toggleTheme } = useTheme();
 
-    const { data: profiles = [] } = useQuery({
+    const { data: profiles = [], isLoading: profileLoading } = useQuery({
         queryKey: ['userProfile', user?.email],
         queryFn: () => entities.UserProfile.filter({ user_email: user?.email }),
         enabled: !!user?.email,
         staleTime: 60000,
     });
-
     const avatarUrl = profiles[0]?.avatar_url;
 
     // ── Build nav groups from enabled features ────────────────────────────────
     const navGroups = features
-        .filter(f => f.is_enabled && f.path)   // only features with a path (nav items)
+        .filter(f => f.is_enabled && f.path)
         .reduce((acc, f) => {
             const g = f.nav_group || 'Other';
             if (!acc[g]) acc[g] = [];
@@ -40,14 +40,19 @@ export default function DashboardLayout() {
             return acc;
         }, {});
 
-    const groupOrder = ['Overview', 'Tracking', 'Growth', 'Tools', 'Library'];
+    const groupOrder = ['Overview', 'Tracking', 'Growth', 'Tools'];
 
-    // ── Don't show lock until we actually know the user's plan ───────────────
-    // If profile is still loading, treat everything as accessible to avoid
-    // flash of lock icons for paying users.
+    // ── KEY: don't show lock until we actually know the user's plan ──────────
+    // While profile is loading, treat everything as accessible to avoid
+    // a flash of lock icons for paying users.
     const checkAccess = (featureId) => {
+        if (profileLoading) return true;
         if (featureId === 'dashboard') return true;
-        return isFeatureAccessible(featureId);
+        // Prefer context-level isFeatureAccessible if available (old logic),
+        // fall back to canAccess with required_plan (new logic).
+        if (typeof isFeatureAccessible === 'function') return isFeatureAccessible(featureId);
+        const feature = features.find(f => f.feature_id === featureId);
+        return canAccess(userPlan, feature?.required_plan);
     };
 
     const planCfg = PLAN_CONFIG[userPlan] || PLAN_CONFIG['free'];
@@ -69,9 +74,9 @@ export default function DashboardLayout() {
             {/* Sidebar */}
             <aside
                 className={`fixed lg:sticky top-0 left-0 h-screen w-60 border-r border-white/5 z-50
-          transform transition-transform duration-300 flex flex-col
-          ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
-                style={{ background: 'hsl(220 20% 4%)' }}
+                    transform transition-transform duration-300 flex flex-col
+                    ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+                style={{ background: 'hsl(var(--sidebar-background))' }}
             >
                 {/* Logo */}
                 <div className="p-5 border-b border-white/5">
@@ -95,7 +100,6 @@ export default function DashboardLayout() {
                     {groupOrder.map(groupName => {
                         const items = navGroups[groupName];
                         if (!items?.length) return null;
-
                         return (
                             <div key={groupName}>
                                 <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-3 mb-1">
@@ -103,20 +107,19 @@ export default function DashboardLayout() {
                                 </div>
                                 {items.map(item => {
                                     const isActive = location.pathname === item.path;
-                                    // ── KEY FIX: wait for profile load before showing lock ──
                                     const accessible = checkAccess(item.feature_id);
                                     const Icon = item.icon;
-
                                     return (
                                         <Link
                                             key={item.path}
                                             to={item.path}
                                             onClick={() => setSidebarOpen(false)}
                                             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium
-                        transition-all duration-200 relative
-                        ${isActive
+                                                transition-all duration-200 relative
+                                                ${isActive
                                                     ? 'bg-emerald-500/10 text-emerald-400'
-                                                    : 'text-muted-foreground hover:text-white hover:bg-white/5'}`}
+                                                    : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                                                }`}
                                         >
                                             {isActive && (
                                                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-emerald-400 rounded-full" />
@@ -124,7 +127,7 @@ export default function DashboardLayout() {
                                             <Icon className="w-4 h-4 flex-shrink-0" />
                                             <span className="flex-1">{item.label}</span>
 
-                                            {/* Only show lock if we're sure user doesn't have access */}
+                                            {/* Only show lock once profile has loaded and access is denied */}
                                             {!accessible && (
                                                 <Lock className="w-3 h-3 text-muted-foreground/50 flex-shrink-0" />
                                             )}
@@ -140,48 +143,96 @@ export default function DashboardLayout() {
                             </div>
                         );
                     })}
+
+                    {/* Static Library links */}
+                    <div className="border-t border-white/5 pt-2 mt-1">
+                        <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest px-3 mb-1">Library</div>
+                        {[
+                            { to: '/dashboard/workout-plans', icon: LayoutGrid, label: 'Workout Plans' },
+                            { to: '/dashboard/programs', icon: Crown, label: 'Programs' },
+                            { to: '/dashboard/xp-history', icon: Zap, label: 'XP History' },
+                        ].map(({ to, icon: Icon, label }) => {
+                            const isActive = location.pathname === to;
+                            return (
+                                <Link key={to} to={to} onClick={() => setSidebarOpen(false)}
+                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium
+                                        transition-all duration-200 relative
+                                        ${isActive
+                                            ? 'bg-emerald-500/10 text-emerald-400'
+                                            : 'text-muted-foreground hover:text-white hover:bg-white/5'
+                                        }`}
+                                >
+                                    {isActive && (
+                                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-emerald-400 rounded-full" />
+                                    )}
+                                    <Icon className="w-4 h-4 flex-shrink-0" />
+                                    <span>{label}</span>
+                                </Link>
+                            );
+                        })}
+                    </div>
                 </nav>
 
                 {/* Bottom actions */}
-                <AnimatePresence mode="wait">
-                    {!confirmLogout ? (
-                        <motion.button
-                            key="logout-btn"
-                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                            onClick={() => setConfirmLogout(true)}
-                            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/5 transition-all"
-                        >
-                            <LogOut className="w-4 h-4" />
-                            <span>Sign Out</span>
-                        </motion.button>
-                    ) : (
-                        <motion.div
-                            key="logout-confirm"
-                            initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
-                            className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 space-y-2"
-                        >
-                            <p className="text-xs text-red-400 font-medium text-center">Sign out of admin?</p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setConfirmLogout(false)}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-muted-foreground transition-all"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={logout}
-                                    className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all"
-                                >
-                                    Sign Out
-                                </button>
-                            </div>
-                        </motion.div>
+                <div className="p-3 border-t border-white/5 space-y-0.5">
+                    {user?.role === 'admin' && (
+                        <Link to="/admin"
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-purple-400 hover:bg-purple-500/10 transition-all">
+                            <Shield className="w-4 h-4" />
+                            Admin Panel
+                        </Link>
                     )}
-                </AnimatePresence>
+
+                    {/* Theme toggle */}
+                    <button
+                        onClick={toggleTheme}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-white hover:bg-white/5 transition-all w-full"
+                    >
+                        {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                        {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
+                    </button>
+
+                    {/* Logout with confirmation */}
+                    <AnimatePresence mode="wait">
+                        {!confirmLogout ? (
+                            <motion.button
+                                key="logout-btn"
+                                initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                                onClick={() => setConfirmLogout(true)}
+                                className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/5 transition-all w-full"
+                            >
+                                <LogOut className="w-4 h-4" />
+                                <span>Sign Out</span>
+                            </motion.button>
+                        ) : (
+                            <motion.div
+                                key="logout-confirm"
+                                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 4 }}
+                                className="rounded-xl border border-red-500/20 bg-red-500/5 p-3 space-y-2"
+                            >
+                                <p className="text-xs text-red-400 font-medium text-center">Sign out?</p>
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setConfirmLogout(false)}
+                                        className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-white/5 hover:bg-white/10 text-muted-foreground transition-all"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={logout}
+                                        className="flex-1 py-1.5 rounded-lg text-xs font-medium bg-red-500/20 hover:bg-red-500/30 text-red-400 transition-all"
+                                    >
+                                        Sign Out
+                                    </button>
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             </aside>
 
             {/* Main content */}
-            <main className="flex-1 min-h-screen overflow-x-clip">
+            <main className="flex-1 min-h-screen overflow-x-hidden">
                 <header className="sticky top-0 z-30 glass border-b border-white/5 px-4 lg:px-8 h-16 flex items-center justify-between">
                     <button
                         className="lg:hidden p-2 rounded-lg hover:bg-white/5"
@@ -201,10 +252,16 @@ export default function DashboardLayout() {
                     <div className="flex items-center gap-3">
                         {userPlan !== 'free' && (
                             <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border font-semibold
-                ${planCfg?.bg} ${planCfg?.color} ${planCfg?.border}`}>
+                                ${planCfg?.bg} ${planCfg?.color} ${planCfg?.border}`}>
                                 {planCfg?.label}
                             </div>
                         )}
+                        {/* Theme toggle in header too */}
+                        <Button variant="ghost" size="icon" className="rounded-lg hover:bg-white/5" onClick={toggleTheme} title="Toggle theme">
+                            {theme === 'dark'
+                                ? <Sun className="w-5 h-5 text-muted-foreground" />
+                                : <Moon className="w-5 h-5 text-muted-foreground" />}
+                        </Button>
                         <Link to="/dashboard/settings">
                             <Button variant="ghost" size="icon" className="rounded-lg hover:bg-white/5">
                                 <Settings className="w-5 h-5 text-muted-foreground" />
@@ -213,8 +270,8 @@ export default function DashboardLayout() {
                         <Link
                             to="/dashboard/profile"
                             className="w-9 h-9 rounded-full bg-emerald-500/20 overflow-hidden flex items-center
-                justify-center text-emerald-400 font-bold text-sm hover:ring-2
-                hover:ring-emerald-500/50 transition-all"
+                                justify-center text-emerald-400 font-bold text-sm hover:ring-2
+                                hover:ring-emerald-500/50 transition-all"
                         >
                             {avatarUrl
                                 ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />

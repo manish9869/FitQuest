@@ -17,7 +17,7 @@ import { BarChart3, TrendingUp, Scale, Dumbbell, Flame, Footprints, Droplets, Mo
 const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     return (
-        <div className="glass rounded-lg p-3 text-xs border border-white/10">
+        <div className="bg-card border border-border rounded-lg p-3 text-xs shadow-lg">
             <p className="font-semibold mb-1">{label}</p>
             {payload.map(p => <p key={p.name} style={{ color: p.color }}>{p.name}: {p.value?.toLocaleString()}</p>)}
         </div>
@@ -121,20 +121,20 @@ export default function Analytics() {
                 <div className="flex items-center gap-2 flex-wrap">
                     {[7, 14, 30, 60].map(r => (
                         <button key={r} onClick={() => { setRange(r); setUseCustom(false); }}
-                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'text-muted-foreground hover:bg-white/5 border border-transparent'}`}>
+                            className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!useCustom && range === r ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'text-muted-foreground hover:bg-black/5 border border-transparent'}`}>
                             {r}d
                         </button>
                     ))}
-                    <div className="flex items-center gap-1.5 pl-2 border-l border-white/10">
+                    <div className="flex items-center gap-1.5 pl-2 border-l border-border">
                         <Calendar className="w-3.5 h-3.5 text-muted-foreground" />
                         <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)}
-                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                            className="text-xs bg-muted border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
                         <span className="text-xs text-muted-foreground">–</span>
                         <input type="date" value={customTo} onChange={e => setCustomTo(e.target.value)}
-                            className="text-xs bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
+                            className="text-xs bg-muted border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none focus:border-blue-500/50" />
                         {customFrom && customTo && (
                             <button onClick={() => setUseCustom(true)}
-                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' : 'bg-white/5 text-muted-foreground border border-white/10 hover:border-blue-500/30 hover:text-blue-300'}`}>
+                                className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${useCustom ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-muted text-muted-foreground border border-border hover:border-blue-500/30 hover:text-blue-400'}`}>
                                 Apply
                             </button>
                         )}
@@ -173,9 +173,9 @@ export default function Analytics() {
                     {(height) => filteredWeightData.length > 0 ? (
                         <ResponsiveContainer width="100%" height={height || 200}>
                             <LineChart data={filteredWeightData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={11} />
-                                <YAxis domain={['auto', 'auto']} stroke="rgba(255,255,255,0.3)" fontSize={11} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis domain={['auto', 'auto']} stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 {profile?.target_weight_kg && <ReferenceLine y={profile.target_weight_kg} stroke="#22c55e" strokeDasharray="4 4" label={{ value: 'Goal', fill: '#22c55e', fontSize: 11 }} />}
                                 <Line type="monotone" dataKey="weight" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 4, fill: '#3b82f6' }} name="Weight (kg)" />
@@ -190,9 +190,9 @@ export default function Analytics() {
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 200}>
                             <RadarChart data={radarData} cx="50%" cy="50%">
-                                <PolarGrid stroke="rgba(255,255,255,0.1)" />
-                                <PolarAngleAxis dataKey="subject" tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }} />
-                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.3)' }} />
+                                <PolarGrid stroke="rgba(128,128,128,0.2)" />
+                                <PolarAngleAxis dataKey="subject" tick={{ fill: 'currentColor', fontSize: 11, opacity: 0.6 }} />
+                                <PolarRadiusAxis angle={30} domain={[0, 100]} tick={{ fontSize: 9, fill: 'currentColor', opacity: 0.4 }} />
                                 <Radar name="Score" dataKey="score" stroke="#a855f7" fill="#a855f7" fillOpacity={0.2} strokeWidth={2} />
                                 <Tooltip content={<CustomTooltip />} />
                             </RadarChart>
@@ -206,9 +206,9 @@ export default function Analytics() {
                 {(height) => (
                     <ResponsiveContainer width="100%" height={height || 180}>
                         <BarChart data={weeklyWorkouts}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                            <XAxis dataKey="label" stroke="rgba(255,255,255,0.3)" fontSize={11} />
-                            <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} allowDecimals={false} />
+                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                            <XAxis dataKey="label" stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                            <YAxis stroke="transparent" fontSize={11} allowDecimals={false} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                             <Tooltip content={<CustomTooltip />} />
                             <Bar dataKey="count" name="Workouts" radius={[6, 6, 0, 0]} maxBarSize={50}>
                                 {weeklyWorkouts.map((entry, i) => (
@@ -231,9 +231,9 @@ export default function Analytics() {
                                         <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 {profile?.daily_calorie_target && <ReferenceLine y={profile.daily_calorie_target} stroke="#22c55e" strokeDasharray="4 4" opacity={0.5} />}
                                 <Area type="monotone" dataKey="calories" stroke="#22c55e" fill="url(#calGrad2)" strokeWidth={2} name="Calories" />
@@ -246,9 +246,9 @@ export default function Analytics() {
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <BarChart data={dailyData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 {profile?.step_goal && <ReferenceLine y={profile.step_goal} stroke="#f97316" strokeDasharray="4 4" opacity={0.5} />}
                                 <Bar dataKey="steps" name="Steps" fill="#f97316" radius={[4, 4, 0, 0]} maxBarSize={40} />
@@ -267,9 +267,9 @@ export default function Analytics() {
                                         <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Area type="monotone" dataKey="water" stroke="#3b82f6" fill="url(#waterGrad2)" strokeWidth={2} name="Water (ml)" />
                             </AreaChart>
@@ -281,9 +281,9 @@ export default function Analytics() {
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <BarChart data={dailyData}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                <YAxis domain={[0, 10]} stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis domain={[0, 10]} stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <ReferenceLine y={8} stroke="#a855f7" strokeDasharray="4 4" opacity={0.5} />
                                 <Bar dataKey="sleep" name="Sleep (hrs)" radius={[4, 4, 0, 0]} maxBarSize={40}>
@@ -307,9 +307,9 @@ export default function Analytics() {
                                         <stop offset="100%" stopColor="#22c55e" stopOpacity={0} />
                                     </linearGradient>
                                 </defs>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="date" stroke="rgba(255,255,255,0.3)" fontSize={10} />
-                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={10} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="date" stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis stroke="transparent" fontSize={10} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 {profile?.protein_target && <ReferenceLine y={profile.protein_target} stroke="#22c55e" strokeDasharray="4 4" opacity={0.5} />}
                                 <Area type="monotone" dataKey="protein" stroke="#22c55e" fill="url(#protGrad)" strokeWidth={2} name="Protein (g)" />
@@ -323,9 +323,9 @@ export default function Analytics() {
                     {(height) => (
                         <ResponsiveContainer width="100%" height={height || 180}>
                             <BarChart data={weeklyWorkouts}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                                <XAxis dataKey="label" stroke="rgba(255,255,255,0.3)" fontSize={11} />
-                                <YAxis stroke="rgba(255,255,255,0.3)" fontSize={11} />
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.15)" />
+                                <XAxis dataKey="label" stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
+                                <YAxis stroke="transparent" fontSize={11} tick={{ fill: 'currentColor', opacity: 0.5 }} />
                                 <Tooltip content={<CustomTooltip />} />
                                 <Bar dataKey="duration" name="Duration (min)" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={40} />
                                 <Bar dataKey="calories" name="Calories Burned" fill="#ec4899" radius={[4, 4, 0, 0]} maxBarSize={40} />
